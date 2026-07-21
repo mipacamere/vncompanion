@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mipa-v2';
+const CACHE_NAME = 'vianazionale-v1';
 const ASSETS = [
   '/',
   '/index.html',
@@ -22,8 +22,18 @@ self.addEventListener('activate', e => {
   );
 });
 
+// Network-first: quando c'è connessione, l'app usa sempre l'ultima versione pubblicata
+// e aggiorna la cache in background. La cache serve SOLO come riserva quando manca la rete
+// (così l'app resta utilizzabile offline, ma non mostra mai una versione vecchia per sbaglio
+// quando invece la rete è disponibile).
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => caches.match('/index.html')))
+    fetch(e.request)
+      .then(res => {
+        const resClone = res.clone();
+        caches.open(CACHE_NAME).then(c => c.put(e.request, resClone)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(e.request).then(cached => cached || caches.match('/index.html')))
   );
 });

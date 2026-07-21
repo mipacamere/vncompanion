@@ -1,5 +1,5 @@
 /**
- * MiPA OCR Proxy — Netlify Function
+ * Via Nazionale OCR Proxy — Netlify Function
  * -----------------------------------
  * Riceve un'immagine (base64) dal frontend (stesso sito Netlify),
  * chiama Google Cloud Vision (DOCUMENT_TEXT_DETECTION) tenendo la API key
@@ -77,8 +77,12 @@ export default async (request) => {
   const data = await visionRes.json();
   const annotation = data.responses && data.responses[0] && data.responses[0].fullTextAnnotation;
   const text = annotation ? annotation.text : '';
+  // Confidenza stimata da Google Vision per la pagina (0-1), utile per segnalare
+  // all'operatore quando la lettura è poco affidabile e va ricontrollata con più attenzione.
+  const confidence = annotation && annotation.pages && annotation.pages[0] && typeof annotation.pages[0].confidence === 'number'
+    ? annotation.pages[0].confidence : null;
 
-  return new Response(JSON.stringify({ text }), {
+  return new Response(JSON.stringify({ text, confidence }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 };

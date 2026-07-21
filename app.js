@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   MiPA Guest Companion — Vanilla JS
+   Via Nazionale Guest Companion — Vanilla JS
    No external dependencies
 ═══════════════════════════════════════════ */
 
@@ -7,17 +7,20 @@
 const state = {
   page: 'home',
   section: 'info',
-  lang: localStorage.getItem('mipa_lang') || 'en',
+  lang: localStorage.getItem('vianaz_lang') || 'en',
   isOnline: navigator.onLine,
-  images: JSON.parse(localStorage.getItem('mipa_images') || '[]'),
-  docsSent: JSON.parse(localStorage.getItem('mipa_docssent') || 'false'),
+  images: JSON.parse(localStorage.getItem('vianaz_images') || '[]'),
+  docsSent: JSON.parse(localStorage.getItem('vianaz_docssent') || 'false'),
   docPhase: 'capture', // 'capture' | 'processing' | 'review' | 'list'
-  schedine: JSON.parse(localStorage.getItem('mipa_schedine') || '[]'), // ospiti già aggiunti alla pratica corrente
+  schedine: JSON.parse(localStorage.getItem('vianaz_schedine') || '[]'), // ospiti già aggiunti alla pratica corrente
   ocrFields: null,     // bozza del guest in corso di revisione (prima di "Aggiungi alla lista")
   ocrRaw: '',
   ocrError: null,
   ocrErrorDetail: '',  // dettaglio tecnico dell'ultimo errore Vision, per diagnosi
   showTxtPreview: false,
+  sendStatus: 'idle', // 'idle' | 'sending' | 'sent' | 'error'
+  sendErrorDetail: '',
+  disclaimerReturnPhase: 'capture',
   showPast: false,
   installPrompt: null,
   installDismissed: false,
@@ -29,51 +32,61 @@ const allT = {
   en: {
     back: 'Back', openMaps: 'Open in Maps', bookWa: 'Book via WhatsApp',
     offline: 'You are offline — some content may not load.',
-    install: { title: 'Install MiPA App', sub: 'Add to your home screen for quick access', btn: 'Install', dismiss: 'Dismiss', iosStep1: '1. Tap the Share button in Safari (□↑)', iosStep2: '2. Scroll down and tap "Add to Home Screen"' },
+    install: { title: 'Install Via Nazionale App', sub: 'Add to your home screen for quick access', btn: 'Install', dismiss: 'Dismiss', iosStep1: '1. Tap the Share button in Safari (□↑)', iosStep2: '2. Scroll down and tap "Add to Home Screen"' },
     tabs: { info:'Structure Info', philosophy:'Our Philosophy', contacts:'Contacts', directions:'Getting Around', map:'Interactive Map', breakfast:'Daily Itinerary', bookServices:'Book Services', events:'City Events', museums:'Museums & Monuments', beach:'Take Me to the Beach', roomGuide:'Back to My Room', checkout:'Check Out', recipes:'No-Cook Recipes', schedine:'Guest documents / Alloggiati Web' },
-    home: { greeting:'Welcome to MiPA 🌿', sub:'Your digital concierge in Milazzo', checkinNew:'Guest documents / Alloggiati Web', checkinNewDesc:'Add guests and send the registration file', checkinDone:'I already checked in', checkinDoneDesc:'Go directly to the app' },
-    dash: { welcome:'MiPA Companion', sub:'What can we help you with?' },
+    home: { greeting:'Welcome to Via Nazionale 🌿', sub:'Your digital concierge in San Filippo del Mela', checkinNew:'Guest documents / Alloggiati Web', checkinNewDesc:'Add guests and send the registration file', checkinDone:'I already checked in', checkinDoneDesc:'Go directly to the app' },
+    dash: { welcome:'Via Nazionale Companion', sub:'What can we help you with?' },
     upload: { title:'Guest documents / Alloggiati Web', dropText:'Tap to add photos', dropSub:'Passport, ID card or driving licence', remove:'Remove', attachNote:'Please attach the photos manually', sendWa:'Send via WhatsApp', waMsg:'Hello! Please find attached the guest registration file (schedine alloggiati). Thank you!', continue:'Continue to property info', sent:'Documents sent ✓',
-      ocrButton:'Extract data (OCR)', ocrProcessing:'Reading your documents…', ocrErrorMsg:"Couldn't read the documents automatically. Please fill in the fields manually.",
-      ocrFallbackMsg:"Couldn't reach the online OCR service, so we used the offline engine instead — results may be less accurate. Please double-check every field.",
+      ocrButton:'Extract data (OCR)', ocrProcessing:'Reading your documents…', ocrErrorMsg:"Couldn't reach the online OCR service. Please fill in all fields manually.",
       techDetailsToggle:'Technical details',
-      reviewTitle:'Check the guest data', reviewSub:'Please verify and complete every field before adding this guest — this data will be used for the official guest registration (Alloggiati Web).',
+      reviewTitle:'Check the guest data', reviewSub:'Please verify and complete every field before adding this guest — data is captured exactly as it appears on the document.',
       sectionStay:'Stay', sectionAnagrafica:'Personal data', sectionNascita:'Place of birth & citizenship', sectionDocumento:'Identity document',
-      fDocType:'Document type', fDocCode:'Document type code (5 digits)', docCodeHint:'If not auto-filled, check the official code table on the portal.',
-      fSurname:'Surname', fGivenNames:'First name(s)', fNumber:'Document number', fNationality:'Nationality', fDob:'Date of birth', fExpiry:'Expiry date',
-      fSesso:'Sex', fTipoAlloggiato:'Guest type', fDataArrivo:'Arrival date', fPermanenza:'Nights of stay',
-      fStatoNascita:'Country of birth', fComuneNascita:'Municipality of birth (Italy only)', fComuneNascitaCode:'Municipality code (9 digits)',
-      fProvinciaNascita:'Province of birth (2-letter code)', fCittadinanza:'Citizenship', fLuogoRilascio:'Place document was issued', fLuogoRilascioCode:'Issue place code (9 digits)',
-      groupMemberNote:'For family members / group members the document fields are left blank on purpose — only the main guest\'s document is recorded, as required by the official format.',
-      manualCodePlaceholder:'code', codeResolved:'Code found', codeNotFound:'Code not found automatically — please enter it manually (check the official table).',
+      fDocType:'Document type', fSurname:'Surname', fGivenNames:'First name(s)', fNumber:'Document number', fDob:'Date of birth',
+      fSesso:'Sex', fTipoAlloggiato:'Guest type', fDataArrivo:'Arrival date', fDataPartenza:'Departure date',
+      fStatoNascita:'Birth country', fComuneNascita:'Place of birth', fProvinciaNascita:'Province of birth (2-letter code, Italy only)', fCittadinanza:'Nationality', fLuogoRilascio:'Place document was issued',
+      ocrConfidenceLabel:'OCR confidence',
       confirmAdd:'Add guest to the list', backToPhotos:'Back to photos', backToList:'Back to guest list',
       listTitle:'Guests in this booking', listEmpty:'No guests added yet.', addGuestBtn:'Add a guest',
-      sendWhatsAppBtn:'Send via WhatsApp', showPreview:'Preview TXT file', hidePreview:'Hide preview',
-      sendEmailBtn:'Send via email', incompleteBadge:'incomplete data', validationProceed:'Do you want to add it anyway? You can fix it later from the list, but the file won\'t be complete until you do.',
-      incompleteWarning:'{n} guest(s) have incomplete data.', txtDownloadedNoteWa:'The file has been downloaded: please attach it manually in the WhatsApp chat that just opened.',
-      txtDownloadedNoteEmail:'The file has been downloaded: please attach it manually in the email that just opened.',
-      txtShareMsg:'Guest registration file (schedine alloggiati) attached.', txtDownloadedNote:'The file has been downloaded: please attach it manually on WhatsApp.',
-      validationTitle:'Please check these fields:' },
+      showPreview:'Preview JSON file', hidePreview:'Hide preview',
+      sendAutoBtn:'Send automatically (Google Sheet)', sending:'Sending…', sentAutomatically:'Sent ✓',
+      sendErrorMsg:"Couldn't write to Google Sheet automatically. Try WhatsApp or download the file below.", downloadBtn:'Download file',
+
+      validationTitle:'Please complete these fields before continuing:', yesterday:'yesterday', today:'today', tomorrow:'tomorrow',
+      disclaimerShort:'Photos are processed by a third-party OCR service: your data will be handled by that third party and results may contain errors. If you would rather avoid this, proceed with manual entry instead.',
+      disclaimerLinkText:'Read more', disclaimerBack:'Back to guest entry',
+      manualEntryBtn:'Fill in manually (no photos, no OCR)',
+      downloadedManualMsg:'File downloaded. Send it with whichever tool you prefer: WhatsApp, Telegram, email, or another app.',
+      disclaimer: {
+        title:'How your data is handled',
+        paragraphs:[
+          "When you use automatic data extraction (OCR), the photos you take are sent to Google Cloud Vision, a third-party service, to read the text on the document. Google processes them only to return the result and, per its stated policy, does not use them to train its models.",
+          "Once you confirm a guest and choose to send the data, it is transmitted to the property either automatically (written directly into a Google Sheet via the Google Sheets API) or, if you choose that option, shared directly via WhatsApp from your device, or downloaded as a file for you to send however you prefer.",
+          "Automatic extraction is a convenience, not a guarantee: OCR results can contain errors, especially with damaged, glare-affected, or unusually formatted documents. Every field is always shown to you for review and must be checked and corrected before adding a guest — the app will not let you proceed if required fields are empty.",
+          "By choosing to use automatic OCR extraction, you accept that the document photo will be processed by the third-party service described above, and that you are responsible for verifying the accuracy of every field before it is sent. If you would rather not use this feature, you can fill in all fields by hand instead — no photo is taken or sent anywhere in that case.",
+          "Data entered in this app is kept only on your device (in the browser's local storage) until you choose to send it, and is cleared when you use the checkout function.",
+        ],
+      },
+    },
     info: { general:'General Info', contacts:'Contacts', address:'Address', phone:'Phone', whatsapp:'Chat on WhatsApp', checkin:'3:00 PM – 10:00 PM', checkout:'By 10:30 AM', wifiConnect:'Connect to WiFi' },
     itinerary: { desc:'Discover the best of the city with this carefully planned itinerary. Explore must-see attractions and enjoy local experiences.', btn:'Explore Milazzo' },
     map: { title:'Milazzo Interactive Map', desc:'Highlights, landmarks and hidden gems.', openMaps:'Open in Google Maps' },
     beach: { desc:'Navigate directly to the nearest beach — crystal-clear Tyrrhenian waters await.', btnTitle:'Take me to the beach', btnSub:'Opens Google Maps · Navigation' },
-    room: { desc:'Let us guide you back to MiPA.', btnTitle:'Navigate to MiPA', btnSub:'Opens Google Maps · Turn-by-turn' },
+    room: { desc:'Let us guide you back to Via Nazionale.', btnTitle:'Navigate to Via Nazionale', btnSub:'Opens Google Maps · Turn-by-turn' },
     co: { desc1:'Thank you for staying with us! Before you leave, please:', steps:['Leave all keys inside the room.','Gather all personal belongings, including chargers and electronics.','Check the room for any items left behind.','Settle any outstanding payments including the city tax.'], note:'If you forget anything, we offer a mail-back service (charges apply).', desc2:'Once ready, tap the button below to notify us. Thank you!', btn:'Complete Check-Out' },
     events: { desc:'Events in Milazzo and surroundings — updated regularly.', showPast:'Show past events', hidePast:'Hide past events', noUpcoming:'No upcoming events. Check back soon!' },
     philosophy: ['To welcome without leaving a trace: that is where everything begins. In the heart of Milazzo, where the rhythm of the city meets the sea, we imagined a space capable of blending naturally and discreetly into the urban fabric, offering a comfortable and authentic stay.','All our rooms — junior suites — are crafted down to the last detail: natural light, soundproofing, efficient systems that minimise waste. Generous, balanced spaces designed for genuine, deep well-being, built on quality and harmony.','Sustainability is a concrete choice, lived every day with real commitment. We have eliminated single-use plastic and disposable paper, provide free drinking water and use only energy from renewable sources. In this way, we contribute to a truly responsible hospitality.','Being in the centre means discovering the city authentically. We are working to promote soft mobility such as cycling, with dedicated itineraries and maps to help you navigate easily and reduce your environmental footprint.','We believe in a hospitality where responsibility and comfort merge without compromise. We have already thought of everything: guests do not need to do anything differently or adopt any particular eco-conscious behaviour. They can simply relax and enjoy their holiday, while we act discreetly to minimise our impact. What remains is the memory of a light, authentic and mindful journey — with a minimal footprint on the environment and a positive mark within oneself.'],
     dir: {
-      arriving: 'Arriving', leaving: 'Leaving Milazzo',
+      arriving: 'Arriving', leaving: 'Leaving San Filippo del Mela',
       arrivalModes: [
-        { icon:'directions_car', color:'#4f7d65', title:'By Car', desc:'Exit the motorway at the Milazzo toll booth and follow Viale Sicilia (main road) to the last available exit. Park at Piazza XXV Aprile (near the property) or nearby blue-line spaces — pay with the EasyPark app.' },
-        { icon:'train', color:'#0284c7', title:'By Train', desc:'Get off at Milazzo station and take bus lines 4 or 5 to the port stop, the closest stop to the property.' },
-        { icon:'directions_bus', color:'#d97706', title:'By Bus', desc:'From Catania airport or other locations, get off at the port stop — the closest to MiPA.' }
+        { icon:'directions_car', color:'#8a1f1f', title:'By Car', desc:'Take the A20 motorway "Milazzo" exit: the property is about a 1-minute drive from the exit, at Via Archi Nazionale 16, San Filippo del Mela. Free parking available nearby.' },
+        { icon:'train', color:'#0284c7', title:'By Train', desc:'The nearest station is Milazzo; from there, we recommend a taxi (about 10 minutes) to reach the property.' },
+        { icon:'directions_bus', color:'#d97706', title:'By Bus', desc:'From Catania airport or other locations, get off at the Milazzo bus station and continue by taxi to Via Archi Nazionale, San Filippo del Mela (about 10 minutes).' }
       ],
       departureModes: [
-        { icon:'directions_car', color:'#4f7d65', title:'By Car', desc:'Follow Viale Sicilia to the end, then take the Milazzo junction to enter the A20 motorway toward Messina (Catania) or Palermo.' },
-        { icon:'directions_bus', color:'#d97706', title:'By Bus to Messina', desc:'Check schedules for GiuntaBus and AST (Azienda Siciliana Trasporti) for daily connections to Messina.' },
-        { icon:'train', color:'#0284c7', title:'By Train', desc:'Take bus lines 4 or 5 from the port stop to Milazzo train station.' },
-        { icon:'flight', color:'#7c3aed', title:'To Catania Airport', desc:'Direct bus connections from Milazzo to Catania airport — check schedules at the port stop.' }
+        { icon:'directions_car', color:'#8a1f1f', title:'By Car', desc:'From the property it takes about 1 minute to join the A20 motorway toward Messina (Catania) or Palermo.' },
+        { icon:'directions_bus', color:'#d97706', title:'By Bus to Messina', desc:'Check schedules for GiuntaBus and AST (Azienda Siciliana Trasporti) from the Milazzo bus station for daily connections to Messina.' },
+        { icon:'train', color:'#0284c7', title:'By Train', desc:'Take a taxi to Milazzo station (about 10 minutes) for train connections.' },
+        { icon:'flight', color:'#7c3aed', title:'To Catania Airport', desc:'Direct bus connections from Milazzo to Catania airport — check schedules at the bus station.' }
       ]
     },
     services: [
@@ -86,51 +99,61 @@ const allT = {
   it: {
     back: 'Indietro', openMaps: 'Apri in Maps', bookWa: 'Prenota via WhatsApp',
     offline: 'Sei offline — alcuni contenuti potrebbero non caricarsi.',
-    install: { title: 'Installa app MiPA', sub: 'Aggiungila alla schermata home', btn: 'Installa', dismiss: 'Ignora', iosStep1: '1. Tocca il pulsante Condividi in Safari (□↑)', iosStep2: '2. Scorri e tocca "Aggiungi alla schermata Home"' },
-    tabs: { info:'Info Struttura', philosophy:'La Nostra Filosofia', contacts:'Contatti', directions:'Raggiungere/Lasciare Milazzo', map:'Mappa Interattiva', breakfast:'Itinerario Giornaliero', bookServices:'Prenota Servizi', events:'Eventi in Città', museums:'Musei e Monumenti', beach:'Portami alla Spiaggia', roomGuide:'Riportami alla Camera', checkout:'Check-Out', recipes:'Ricette No-Cook', schedine:'Documenti ospiti / Schedine Alloggiati' },
-    home: { greeting:'Benvenuto a MiPA 🌿', sub:'Il tuo concierge digitale a Milazzo', checkinNew:'Documenti ospiti / Schedine Alloggiati', checkinNewDesc:"Aggiungi gli ospiti e invia il file di registrazione", checkinDone:'Ho già fatto il check-in', checkinDoneDesc:"Vai direttamente all'app" },
-    dash: { welcome:'MiPA Companion', sub:'Come possiamo aiutarti?' },
+    install: { title: 'Installa app Via Nazionale', sub: 'Aggiungila alla schermata home', btn: 'Installa', dismiss: 'Ignora', iosStep1: '1. Tocca il pulsante Condividi in Safari (□↑)', iosStep2: '2. Scorri e tocca "Aggiungi alla schermata Home"' },
+    tabs: { info:'Info Struttura', philosophy:'La Nostra Filosofia', contacts:'Contatti', directions:'Raggiungere/Lasciare la Struttura', map:'Mappa Interattiva', breakfast:'Itinerario Giornaliero', bookServices:'Prenota Servizi', events:'Eventi in Città', museums:'Musei e Monumenti', beach:'Portami alla Spiaggia', roomGuide:'Riportami alla Camera', checkout:'Check-Out', recipes:'Ricette No-Cook', schedine:'Documenti ospiti / Schedine Alloggiati' },
+    home: { greeting:'Benvenuto a Via Nazionale 🌿', sub:'Il tuo concierge digitale a San Filippo del Mela', checkinNew:'Documenti ospiti / Schedine Alloggiati', checkinNewDesc:"Aggiungi gli ospiti e invia il file di registrazione", checkinDone:'Ho già fatto il check-in', checkinDoneDesc:"Vai direttamente all'app" },
+    dash: { welcome:'Via Nazionale Companion', sub:'Come possiamo aiutarti?' },
     upload: { title:"Documenti ospiti / Alloggiati Web", dropText:'Tocca per aggiungere foto', dropSub:"Passaporto, carta d'identità o patente", remove:'Rimuovi', attachNote:"Si prega di allegare le foto manualmente", sendWa:"Invia tramite WhatsApp", waMsg:"Buongiorno! In allegato il file per la registrazione ospiti (schedine alloggiati). Grazie!", continue:'Continua alle info sulla struttura', sent:'Documenti inviati ✓',
-      ocrButton:'Estrai dati (OCR)', ocrProcessing:'Lettura dei documenti in corso…', ocrErrorMsg:"Non è stato possibile leggere automaticamente i documenti. Compila i campi manualmente.",
-      ocrFallbackMsg:"Non è stato possibile raggiungere il servizio OCR online, quindi è stato usato il motore offline — i risultati potrebbero essere meno precisi. Verifica bene ogni campo.",
+      ocrButton:'Estrai dati (OCR)', ocrProcessing:'Lettura dei documenti in corso…', ocrErrorMsg:"Non è stato possibile raggiungere il servizio OCR online. Compila tutti i campi manualmente.",
       techDetailsToggle:'Dettagli tecnici',
-      reviewTitle:'Controlla i dati dell\'ospite', reviewSub:'Verifica e completa ogni campo prima di aggiungere questo ospite: questi dati verranno usati per la comunicazione ufficiale (Alloggiati Web).',
+      reviewTitle:'Controlla i dati dell\'ospite', reviewSub:'Verifica e completa ogni campo prima di aggiungere questo ospite: i dati vengono acquisiti così come compaiono sul documento.',
       sectionStay:'Soggiorno', sectionAnagrafica:'Dati anagrafici', sectionNascita:'Nascita e cittadinanza', sectionDocumento:'Documento di riconoscimento',
-      fDocType:'Tipo documento', fDocCode:'Codice tipo documento (5 cifre)', docCodeHint:'Se non è stato compilato in automatico, verifica la tabella codici ufficiale sul portale.',
-      fSurname:'Cognome', fGivenNames:'Nome/i', fNumber:'Numero documento', fNationality:'Nazionalità', fDob:'Data di nascita', fExpiry:'Data di scadenza',
-      fSesso:'Sesso', fTipoAlloggiato:'Tipo alloggiato', fDataArrivo:'Data di arrivo', fPermanenza:'Giorni di permanenza',
-      fStatoNascita:'Stato di nascita', fComuneNascita:'Comune di nascita (solo se nato in Italia)', fComuneNascitaCode:'Codice comune (9 cifre)',
-      fProvinciaNascita:'Provincia di nascita (sigla)', fCittadinanza:'Cittadinanza', fLuogoRilascio:'Luogo di rilascio del documento', fLuogoRilascioCode:'Codice luogo di rilascio (9 cifre)',
-      groupMemberNote:'Per familiari/membri di gruppo i campi del documento restano volutamente vuoti: fa fede solo il documento del capofamiglia/capogruppo, come richiesto dal tracciato ufficiale.',
-      manualCodePlaceholder:'codice', codeResolved:'Codice trovato', codeNotFound:'Codice non trovato automaticamente: inseriscilo a mano (verifica la tabella ufficiale).',
+      fDocType:'Tipo documento', fSurname:'Cognome', fGivenNames:'Nome/i', fNumber:'Numero documento', fDob:'Data di nascita',
+      fSesso:'Sesso', fTipoAlloggiato:'Tipo ospite', fDataArrivo:'Data di arrivo', fDataPartenza:'Data di partenza',
+      fStatoNascita:'Stato di nascita', fComuneNascita:'Luogo di nascita', fProvinciaNascita:'Provincia di nascita (sigla, solo se nato in Italia)', fCittadinanza:'Cittadinanza', fLuogoRilascio:'Luogo di rilascio del documento',
+      ocrConfidenceLabel:'Affidabilità OCR',
       confirmAdd:'Aggiungi ospite alla lista', backToPhotos:'Torna alle foto', backToList:'Torna alla lista ospiti',
       listTitle:'Ospiti di questa pratica', listEmpty:'Nessun ospite ancora aggiunto.', addGuestBtn:'Aggiungi un ospite',
-      sendWhatsAppBtn:'Invia su WhatsApp', showPreview:'Anteprima file TXT', hidePreview:'Nascondi anteprima',
-      sendEmailBtn:'Invia via email', incompleteBadge:'dati incompleti', validationProceed:'Vuoi aggiungerlo comunque? Potrai correggerlo più tardi dalla lista, ma il file non sarà completo finché non lo fai.',
-      incompleteWarning:'{n} ospite/i hanno dati incompleti.', txtDownloadedNoteWa:'Il file è stato scaricato: allegalo manualmente nella chat WhatsApp che si è aperta.',
-      txtDownloadedNoteEmail:'Il file è stato scaricato: allegalo manualmente nella email che si è aperta.',
-      txtShareMsg:'In allegato il file per la registrazione ospiti (schedine alloggiati).', txtDownloadedNote:'Il file è stato scaricato: allegalo manualmente su WhatsApp.',
-      validationTitle:'Controlla questi campi:' },
+      showPreview:'Anteprima file JSON', hidePreview:'Nascondi anteprima',
+      sendAutoBtn:'Invia automaticamente (Google Sheet)', sending:'Invio in corso…', sentAutomatically:'Inviato ✓',
+      sendErrorMsg:'Non è stato possibile scrivere automaticamente su Google Sheet. Prova con WhatsApp o scarica il file qui sotto.', downloadBtn:'Scarica il file',
+
+      validationTitle:'Completa questi campi prima di continuare:', yesterday:'ieri', today:'oggi', tomorrow:'domani',
+      disclaimerShort:'Le foto vengono elaborate da un servizio OCR di terze parti: i tuoi dati saranno trattati da terzi e il risultato può contenere errori. Se preferisci evitarlo, procedi con l\'inserimento manuale.',
+      disclaimerLinkText:'Scopri di più', disclaimerBack:'Torna all\'inserimento ospite',
+      manualEntryBtn:'Compila manualmente (senza foto né OCR)',
+      downloadedManualMsg:'File scaricato. Invialo con lo strumento che preferisci: WhatsApp, Telegram, email o un\'altra app.',
+      disclaimer: {
+        title:'Come vengono trattati i tuoi dati',
+        paragraphs:[
+          "Quando usi l'estrazione automatica dei dati (OCR), le foto che scatti vengono inviate a Google Cloud Vision, un servizio di terze parti, per leggere il testo sul documento. Google le elabora solo per restituire il risultato e, secondo la sua policy dichiarata, non le usa per addestrare i propri modelli.",
+          "Una volta confermato un ospite e scelto di inviare i dati, questi vengono trasmessi alla struttura in automatico (scritti direttamente in un Google Sheet tramite le API di Google Sheets) oppure, se scegli questa opzione, condivisi direttamente su WhatsApp dal tuo dispositivo, o scaricati come file da inviare come preferisci.",
+          "L'estrazione automatica è una comodità, non una garanzia: i risultati dell'OCR possono contenere errori, specialmente con documenti danneggiati, con riflessi di luce o con formati insoliti. Ogni campo ti viene sempre mostrato per la revisione e va controllato e corretto prima di aggiungere un ospite — l'app non ti lascia proseguire se mancano campi obbligatori.",
+          "Scegliendo di usare l'estrazione automatica OCR, accetti che la foto del documento venga elaborata dal servizio di terze parti sopra descritto, e sei responsabile della verifica dell'esattezza di ogni campo prima dell'invio. Se preferisci non usare questa funzione, puoi compilare tutti i campi a mano: in quel caso nessuna foto viene scattata né inviata da nessuna parte.",
+          "I dati inseriti in questa app restano solo sul tuo dispositivo (nella memoria locale del browser) finché non scegli di inviarli, e vengono cancellati quando usi la funzione di checkout.",
+        ],
+      },
+    },
     info: { general:'Informazioni Generali', contacts:'Contatti', address:'Indirizzo', phone:'Telefono', whatsapp:'Chatta su WhatsApp', checkin:'15:00 – 22:00', checkout:'Entro le 10:30', wifiConnect:'Connetti al WiFi' },
     itinerary: { desc:'Scopri il meglio della città con questo itinerario giornaliero ben pianificato.', btn:'Esplora Milazzo' },
     map: { title:'Mappa Interattiva di Milazzo', desc:'Attrazioni, monumenti e gemme nascoste.', openMaps:'Apri in Google Maps' },
     beach: { desc:'Naviga direttamente alla spiaggia più vicina — acque cristalline del Tirreno ti aspettano.', btnTitle:'Portami alla spiaggia', btnSub:'Apre Google Maps · Navigazione' },
-    room: { desc:'Lasciati guidare verso MiPA.', btnTitle:'Naviga verso MiPA', btnSub:'Apre Google Maps · Indicazioni' },
+    room: { desc:'Lasciati guidare verso Via Nazionale.', btnTitle:'Naviga verso Via Nazionale', btnSub:'Apre Google Maps · Indicazioni' },
     co: { desc1:'Grazie per aver soggiornato da noi! Prima di partire, ti preghiamo di:', steps:['Lascia tutte le chiavi nella camera.','Raccogli tutti i tuoi oggetti personali, compresi caricabatterie ed elettroniche.','Controlla accuratamente la camera per eventuali oggetti dimenticati.','Regola tutti i pagamenti in sospeso, inclusa la tassa di soggiorno.'], note:'Se dimentichi qualcosa, offriamo un servizio di rispedizione (con costi aggiuntivi).', desc2:'Una volta pronto, tocca il pulsante qui sotto per avvisarci. Grazie!', btn:'Completa Check-Out' },
     events: { desc:'Prossimi eventi a Milazzo e dintorni — aggiornati regolarmente.', showPast:'Mostra eventi precedenti', hidePast:'Nascondi eventi precedenti', noUpcoming:'Nessun evento in programma. Ricontrolla presto!' },
     philosophy: ["Accogliere senza lasciare traccia: da qui nasce tutto. Nel cuore di Milazzo, dove il ritmo della città incontra il mare, abbiamo immaginato uno spazio capace di integrarsi in modo naturale e discreto nel contesto urbano, offrendo un'esperienza di soggiorno confortevole e autentica.","Tutte le nostre camere, junior suite, sono curate nei minimi dettagli: luce naturale, insonorizzazione, impianti efficienti che riducono gli sprechi. Spazi ampi ed equilibrati, pensati per un benessere autentico e profondo, fatto di qualità e armonia.","La sostenibilità è una scelta concreta, vissuta ogni giorno con impegno reale. Abbiamo eliminato plastica monouso e carta usa e getta, offriamo acqua potabile gratuita e usiamo solo energia da fonti rinnovabili. Così, contribuiamo a un'ospitalità veramente responsabile.","Essere in centro significa scoprire la città in modo autentico. Stiamo lavorando per promuovere la mobilità dolce come la bicicletta, con itinerari e mappe dedicate per orientarsi facilmente e ridurre l'impatto ambientale.","Crediamo in un'ospitalità dove responsabilità e comfort si fondono senza compromessi. Abbiamo già pensato a tutto: l'ospite non deve fare nulla di diverso, né adottare atteggiamenti responsabili. Può semplicemente rilassarsi e godersi la vacanza, mentre noi agiamo in modo discreto per minimizzare l'impatto. Quello che resta è il ricordo di un viaggio leggero, autentico e consapevole — con un'impronta minima sull'ambiente e un segno positivo dentro di sé."],
     dir: {
-      arriving: 'Arrivare', leaving: 'Lasciare Milazzo',
+      arriving: 'Arrivare', leaving: 'Lasciare San Filippo del Mela',
       arrivalModes: [
-        { icon:'directions_car', color:'#4f7d65', title:'In Auto', desc:"Esci dall'autostrada al casello di Milazzo e segui il Viale Sicilia fino all'ultima uscita. Parcheggia in Piazza XXV Aprile o nelle vicinanze (strisce blu — usa l'app EasyPark)." },
-        { icon:'train', color:'#0284c7', title:'In Treno', desc:'Scendi alla stazione di Milazzo e prendi le linee 4 o 5 fino alla fermata del porto, la più vicina alla struttura.' },
-        { icon:'directions_bus', color:'#d97706', title:'In Autobus', desc:"Dall'aeroporto di Catania o altre località, scendi alla fermata del porto — la più vicina a MiPA." }
+        { icon:'directions_car', color:'#8a1f1f', title:'In Auto', desc:"Esci all'uscita autostradale A20 \"Milazzo\": la struttura si trova a circa 1 minuto d'auto dallo svincolo, in Via Archi Nazionale 16, San Filippo del Mela. Parcheggio libero disponibile in zona." },
+        { icon:'train', color:'#0284c7', title:'In Treno', desc:"La stazione più vicina è quella di Milazzo; da lì raggiungi la struttura in taxi (circa 10 minuti)." },
+        { icon:'directions_bus', color:'#d97706', title:'In Autobus', desc:"Dall'aeroporto di Catania o da altre località, scendi alla fermata di Milazzo (autostazione) e prosegui in taxi fino a Via Archi Nazionale, San Filippo del Mela (circa 10 minuti)." }
       ],
       departureModes: [
-        { icon:'directions_car', color:'#4f7d65', title:'In Auto', desc:"Segui il Viale Sicilia fino alla fine, poi prendi lo svincolo di Milazzo per l'A20 direzione Messina (Catania) o Palermo." },
-        { icon:'directions_bus', color:'#d97706', title:'In Autobus (verso Messina)', desc:'Consulta gli orari di GiuntaBus e AST (Azienda Siciliana Trasporti) per le corse giornaliere verso Messina.' },
-        { icon:'train', color:'#0284c7', title:'In Treno', desc:'Prendi le linee 4 o 5 dalla fermata del porto fino alla stazione ferroviaria di Milazzo.' },
-        { icon:'flight', color:'#7c3aed', title:'Aeroporto di Catania', desc:"Collegamento diretto da Milazzo all'aeroporto di Catania — controlla gli orari alla fermata del porto." }
+        { icon:'directions_car', color:'#8a1f1f', title:'In Auto', desc:"Dalla struttura basta circa 1 minuto per immettersi sull'A20 direzione Messina (Catania) o Palermo." },
+        { icon:'directions_bus', color:'#d97706', title:'In Autobus (verso Messina)', desc:'Consulta gli orari di GiuntaBus e AST (Azienda Siciliana Trasporti) dall\'autostazione di Milazzo per le corse giornaliere verso Messina.' },
+        { icon:'train', color:'#0284c7', title:'In Treno', desc:'Raggiungi in taxi la stazione di Milazzo (circa 10 minuti) per i collegamenti ferroviari.' },
+        { icon:'flight', color:'#7c3aed', title:'Aeroporto di Catania', desc:"Collegamenti diretti in autobus da Milazzo all'aeroporto di Catania — controlla gli orari in autostazione." }
       ]
     },
     services: [
@@ -143,96 +166,246 @@ const allT = {
   fr: {
     back:'Retour', openMaps:'Ouvrir dans Maps', bookWa:'Réserver via WhatsApp',
     offline:"Vous êtes hors ligne — certains contenus peuvent ne pas se charger.",
-    install:{ title:"Installer l'app MiPA", sub:"Ajoutez-la à votre écran d'accueil", btn:'Installer', dismiss:'Ignorer', iosStep1:"1. Appuyez sur le bouton Partager dans Safari (□↑)", iosStep2:"2. Faites défiler et appuyez sur \"Sur l'écran d'accueil\"" },
-    tabs:{ info:'Infos Structure', philosophy:'Notre Philosophie', contacts:'Contacts', directions:'Arriver/Quitter Milazzo', map:'Carte Interactive', breakfast:'Itinéraire du Jour', bookServices:'Réserver Services', events:'Événements en Ville', museums:'Musées et Monuments', beach:'Emmène-moi à la Plage', roomGuide:'Retour à ma Chambre', checkout:'Check-Out', recipes:'Recettes Sans Cuisson' },
-    home:{ greeting:'Bienvenue à MiPA 🌿', sub:'Votre concierge digital à Milazzo', checkinNew:"Je dois m'enregistrer", checkinNewDesc:"Téléchargez vos pièces d'identité", checkinDone:'Je suis déjà enregistré', checkinDoneDesc:"Accéder directement à l'app" },
-    dash:{ welcome:'MiPA Companion', sub:'Comment pouvons-nous vous aider ?' },
-    upload:{ title:"Téléchargez vos pièces d'identité", dropText:'Appuyez pour ajouter des photos', dropSub:"Passeport, carte d'identité ou permis de conduire", remove:'Supprimer', attachNote:"Veuillez joindre les photos manuellement", sendWa:"Envoyer via WhatsApp", waMsg:"Bonjour! Je vous envoie mes documents d'identité pour le check-in à MiPA, Milazzo. Vous trouverez les photos ci-jointes. Merci!", continue:'Continuer vers les infos hébergement', sent:'Documents envoyés ✓' },
+    install:{ title:"Installer l'app Via Nazionale", sub:"Ajoutez-la à votre écran d'accueil", btn:'Installer', dismiss:'Ignorer', iosStep1:"1. Appuyez sur le bouton Partager dans Safari (□↑)", iosStep2:"2. Faites défiler et appuyez sur \"Sur l'écran d'accueil\"" },
+    tabs:{ info:'Infos Structure', philosophy:'Notre Philosophie', contacts:'Contacts', directions:"Arriver/Quitter la Structure", map:'Carte Interactive', breakfast:'Itinéraire du Jour', bookServices:'Réserver Services', events:'Événements en Ville', museums:'Musées et Monuments', beach:'Emmène-moi à la Plage', roomGuide:'Retour à ma Chambre', checkout:'Check-Out', recipes:'Recettes Sans Cuisson', schedine:'Documents des clients / Alloggiati Web' },
+    home:{ greeting:'Bienvenue à Via Nazionale 🌿', sub:'Votre concierge digital à San Filippo del Mela', checkinNew:'Documents des clients / Alloggiati Web', checkinNewDesc:'Ajoutez vos clients et envoyez le fichier d\'enregistrement', checkinDone:'Je suis déjà enregistré', checkinDoneDesc:"Accéder directement à l'app" },
+    dash:{ welcome:'Via Nazionale Companion', sub:'Comment pouvons-nous vous aider ?' },
+    upload:{ title:"Documents des clients / Alloggiati Web", dropText:'Appuyez pour ajouter des photos', dropSub:"Passeport, carte d'identité ou permis de conduire", remove:'Supprimer', attachNote:"Veuillez joindre les photos manuellement", sendWa:"Envoyer via WhatsApp", waMsg:"Bonjour ! Voici en pièce jointe le fichier d'enregistrement des clients (schedine alloggiati). Merci !", continue:"Continuer vers les infos de l'hébergement", sent:'Documents envoyés ✓',
+      ocrButton:'Extraire les données (OCR)', ocrProcessing:'Lecture de vos documents…', ocrErrorMsg:"Impossible de joindre le service OCR en ligne. Veuillez remplir tous les champs manuellement.",
+      techDetailsToggle:'Détails techniques',
+      reviewTitle:'Vérifiez les données du client', reviewSub:"Veuillez vérifier et compléter chaque champ avant d'ajouter ce client — les données sont saisies telles qu'elles apparaissent sur le document.",
+      sectionStay:'Séjour', sectionAnagrafica:'Données personnelles', sectionNascita:'Lieu de naissance et nationalité', sectionDocumento:"Pièce d'identité",
+      fDocType:'Type de document', fSurname:'Nom de famille', fGivenNames:'Prénom(s)', fNumber:'Numéro du document', fDob:'Date de naissance',
+      fSesso:'Sexe', fTipoAlloggiato:"Type d'hôte", fDataArrivo:"Date d'arrivée", fDataPartenza:'Date de départ',
+      fStatoNascita:'Pays de naissance', fComuneNascita:'Lieu de naissance', fProvinciaNascita:'Province de naissance (code à 2 lettres, Italie uniquement)', fCittadinanza:'Nationalité', fLuogoRilascio:'Lieu de délivrance du document',
+      ocrConfidenceLabel:'Fiabilité OCR',
+      confirmAdd:'Ajouter le client à la liste', backToPhotos:'Retour aux photos', backToList:'Retour à la liste des clients',
+      listTitle:'Clients de cette réservation', listEmpty:'Aucun client ajouté pour le moment.', addGuestBtn:'Ajouter un client',
+      showPreview:'Aperçu du fichier JSON', hidePreview:"Masquer l'aperçu",
+      sendAutoBtn:'Envoyer automatiquement (Google Sheet)', sending:'Envoi en cours…', sentAutomatically:'Envoyé ✓',
+      sendErrorMsg:"Impossible d'écrire automatiquement dans Google Sheet. Essayez WhatsApp ou téléchargez le fichier ci-dessous.", downloadBtn:'Télécharger le fichier',
+
+      validationTitle:'Veuillez compléter ces champs avant de continuer :', yesterday:'hier', today:"aujourd'hui", tomorrow:'demain',
+      disclaimerShort:"Les photos sont traitées par un service OCR tiers : vos données seront traitées par ce tiers et le résultat peut contenir des erreurs. Si vous préférez éviter cela, procédez à la saisie manuelle.",
+      disclaimerLinkText:'En savoir plus', disclaimerBack:'Retour à la saisie du client',
+      manualEntryBtn:'Remplir manuellement (sans photo ni OCR)',
+      downloadedManualMsg:"Fichier téléchargé. Envoyez-le avec l'outil de votre choix : WhatsApp, Telegram, e-mail ou une autre application.",
+      disclaimer: {
+        title:'Comment vos données sont traitées',
+        paragraphs:[
+          "Lorsque vous utilisez l'extraction automatique des données (OCR), les photos que vous prenez sont envoyées à Google Cloud Vision, un service tiers, pour lire le texte du document. Google les traite uniquement pour renvoyer le résultat et, selon sa politique déclarée, ne les utilise pas pour entraîner ses modèles.",
+          "Une fois qu'un client est confirmé et que vous choisissez d'envoyer les données, celles-ci sont transmises à l'établissement soit automatiquement (écrites directement dans un Google Sheet via l'API Google Sheets), soit, si vous choisissez cette option, partagées directement via WhatsApp depuis votre appareil, ou téléchargées sous forme de fichier à envoyer comme vous préférez.",
+          "L'extraction automatique est une commodité, pas une garantie : les résultats de l'OCR peuvent contenir des erreurs, en particulier avec des documents endommagés, avec des reflets ou de format inhabituel. Chaque champ vous est toujours présenté pour vérification et doit être contrôlé et corrigé avant d'ajouter un client — l'application ne vous laisse pas continuer si des champs obligatoires sont vides.",
+          "En choisissant d'utiliser l'extraction OCR automatique, vous acceptez que la photo du document soit traitée par le service tiers décrit ci-dessus, et vous êtes responsable de la vérification de l'exactitude de chaque champ avant son envoi. Si vous préférez ne pas utiliser cette fonction, vous pouvez remplir tous les champs à la main : dans ce cas, aucune photo n'est prise ni envoyée nulle part.",
+          "Les données saisies dans cette application restent uniquement sur votre appareil (dans la mémoire locale du navigateur) jusqu'à ce que vous choisissiez de les envoyer, et sont effacées lorsque vous utilisez la fonction de check-out.",
+        ],
+      },
+    },
     info:{ general:'Informations Générales', contacts:'Contacts', address:'Adresse', phone:'Téléphone', whatsapp:'Chat sur WhatsApp', checkin:'15h00 – 22h00', checkout:'Avant 10h30', wifiConnect:'Se connecter au WiFi' },
     itinerary:{ desc:'Découvrez le meilleur de la ville grâce à cet itinéraire soigneusement planifié.', btn:'Explorer Milazzo' },
     map:{ title:'Carte Interactive de Milazzo', desc:'Attractions, monuments et joyaux cachés.', openMaps:'Ouvrir dans Google Maps' },
     beach:{ desc:'Naviguez directement vers la plage la plus proche — des eaux cristallines vous attendent.', btnTitle:'Emmène-moi à la plage', btnSub:'Ouvre Google Maps · Navigation' },
-    room:{ desc:"Laissez-nous vous guider jusqu'à MiPA.", btnTitle:'Naviguer vers MiPA', btnSub:'Ouvre Google Maps · Itinéraire' },
+    room:{ desc:"Laissez-nous vous guider jusqu'à Via Nazionale.", btnTitle:'Naviguer vers Via Nazionale', btnSub:'Ouvre Google Maps · Itinéraire' },
     co:{ desc1:'Merci pour votre séjour ! Avant de partir, veuillez :', steps:["Laissez toutes les clés dans la chambre.","Rassemblez toutes vos affaires personnelles, y compris chargeurs et électroniques.","Vérifiez soigneusement la chambre pour tout objet oublié.","Réglez tous les paiements en attente, y compris la taxe de séjour."], note:'Si vous oubliez quelque chose, nous proposons un service de renvoi (frais applicables).', desc2:'Une fois prêt, appuyez sur le bouton ci-dessous pour nous prévenir. Merci !', btn:'Finaliser le Check-Out' },
     events:{ desc:'Événements à Milazzo et environs — mis à jour régulièrement.', showPast:'Afficher les événements passés', hidePast:'Masquer les événements passés', noUpcoming:'Aucun événement à venir. Revenez bientôt !' },
     philosophy:["Accueillir sans laisser de trace : c'est là que tout commence. Au cœur de Milazzo, où le rythme de la ville rencontre la mer, nous avons imaginé un espace capable de s'intégrer naturellement et discrètement dans le tissu urbain, offrant un séjour confortable et authentique.","Toutes nos chambres — junior suites — sont soignées dans les moindres détails : lumière naturelle, isolation phonique, systèmes efficaces qui minimisent le gaspillage. Des espaces généreux et équilibrés conçus pour un vrai bien-être profond, fondé sur la qualité et l'harmonie.","La durabilité est un choix concret, vécu chaque jour avec un engagement réel. Nous avons éliminé le plastique à usage unique et le papier jetable, proposons de l'eau potable gratuite et utilisons uniquement de l'énergie issue de sources renouvelables. Ainsi, nous contribuons à une hospitalité véritablement responsable.","Être au centre, c'est découvrir la ville authentiquement. Nous travaillons à promouvoir la mobilité douce comme le vélo, avec des itinéraires et des cartes dédiés pour se repérer facilement et réduire son empreinte environnementale.","Nous croyons en une hospitalité où responsabilité et confort fusionnent sans compromis. Nous avons déjà tout prévu : les hôtes n'ont rien à faire différemment ni à adopter de comportements éco-responsables particuliers. Ils peuvent simplement se détendre et profiter de leurs vacances, tandis que nous agissons discrètement pour minimiser notre impact. Ce qui reste, c'est le souvenir d'un voyage léger, authentique et conscient — avec une empreinte minimale sur l'environnement et une marque positive en soi."],
-    dir:{ arriving:'Arrivée', leaving:'Quitter Milazzo', arrivalModes:[{icon:'directions_car',color:'#4f7d65',title:'En Voiture',desc:"Quittez l'autoroute au péage de Milazzo et suivez le Viale Sicilia jusqu'à la dernière sortie. Garez-vous sur la Piazza XXV Aprile (lignes bleues — app EasyPark)."},{icon:'train',color:'#0284c7',title:'En Train',desc:"Descendez à la gare de Milazzo et prenez les lignes 4 ou 5 jusqu'à l'arrêt du port, le plus proche de l'hébergement."},{icon:'directions_bus',color:'#d97706',title:'En Bus',desc:"Depuis l'aéroport de Catane ou d'autres localités, descendez à l'arrêt du port — le plus proche de MiPA."}], departureModes:[{icon:'directions_car',color:'#4f7d65',title:'En Voiture',desc:"Suivez le Viale Sicilia jusqu'au bout, puis prenez le raccordement Milazzo pour entrer sur l'A20 en direction de Messine (Catane) ou Palerme."},{icon:'directions_bus',color:'#d97706',title:'En Bus (vers Messine)',desc:'Vérifiez les horaires de GiuntaBus et AST pour les liaisons journalières vers Messine.'},{icon:'train',color:'#0284c7',title:'En Train',desc:"Prenez les lignes 4 ou 5 depuis l'arrêt du port jusqu'à la gare de Milazzo."},{icon:'flight',color:'#7c3aed',title:"Aéroport de Catane",desc:"Liaison directe de Milazzo à l'aéroport de Catane — horaires à l'arrêt du port."}] },
+    dir:{ arriving:'Arrivée', leaving:'Quitter San Filippo del Mela', arrivalModes:[{icon:'directions_car',color:'#8a1f1f',title:'En Voiture',desc:"Prenez la sortie d'autoroute A20 « Milazzo » : l'hébergement se trouve à environ 1 minute de route de la sortie, Via Archi Nazionale 16, San Filippo del Mela. Parking gratuit à proximité."},{icon:'train',color:'#0284c7',title:'En Train',desc:"La gare la plus proche est celle de Milazzo ; de là, nous recommandons un taxi (environ 10 minutes) pour rejoindre l'hébergement."},{icon:'directions_bus',color:'#d97706',title:'En Bus',desc:"Depuis l'aéroport de Catane ou d'autres localités, descendez à la gare routière de Milazzo et poursuivez en taxi jusqu'à Via Archi Nazionale, San Filippo del Mela (environ 10 minutes)."}], departureModes:[{icon:'directions_car',color:'#8a1f1f',title:'En Voiture',desc:"Depuis l'hébergement, il suffit d'environ 1 minute pour rejoindre l'A20 en direction de Messine (Catane) ou Palerme."},{icon:'directions_bus',color:'#d97706',title:'En Bus (vers Messine)',desc:'Vérifiez les horaires de GiuntaBus et AST depuis la gare routière de Milazzo pour les liaisons journalières vers Messine.'},{icon:'train',color:'#0284c7',title:'En Train',desc:"Prenez un taxi jusqu'à la gare de Milazzo (environ 10 minutes) pour les correspondances ferroviaires."},{icon:'flight',color:'#7c3aed',title:"Aéroport de Catane",desc:"Liaisons directes en bus de Milazzo vers l'aéroport de Catane — vérifiez les horaires à la gare routière."}] },
     services:[{emoji:'🚲',title:'Location de vélos',price:'À partir de €10 / jour',note:'Explorez Milazzo à vélo — vélos urbains et électriques disponibles.',waText:'Bonjour, je voudrais louer un vélo.'},{emoji:'🤿',title:'Plongée sous-marine',price:'À partir de €60 / pers.',note:'Réservez 24h à l\'avance. Des eaux cristallines vous attendent.',waText:'Bonjour, je voudrais réserver une plongée.'},{emoji:'⛵',title:'Tour îles Éoliennes (2-3 îles)',price:'À partir de €40 / pers.',note:'Réservez via Navisal ou Tarnav. Excursions à Lipari, Stromboli, Vulcano.',waText:'Bonjour, je voudrais des infos sur le tour des îles Éoliennes.'},{emoji:'🛥️',title:'Tour privé îles Éoliennes',price:'À partir de €100 / pers.',note:'Croisière privée. Itinéraire personnalisable.',waText:'Bonjour, je voudrais réserver un tour privé aux îles Éoliennes.'}]
   },
   es: {
     back:'Volver', openMaps:'Abrir en Maps', bookWa:'Reservar por WhatsApp',
     offline:'Estás sin conexión — algunos contenidos pueden no cargarse.',
-    install:{ title:'Instalar app MiPA', sub:'Añadir a tu pantalla de inicio', btn:'Instalar', dismiss:'Ignorar', iosStep1:'1. Toca el botón Compartir en Safari (□↑)', iosStep2:'2. Desplázate y toca "Añadir a la pantalla de inicio"' },
-    tabs:{ info:'Info del Alojamiento', philosophy:'Nuestra Filosofía', contacts:'Contactos', directions:'Llegar/Salir de Milazzo', map:'Mapa Interactivo', breakfast:'Itinerario Diario', bookServices:'Reservar Servicios', events:'Eventos en la Ciudad', museums:'Museos y Monumentos', beach:'Llévame a la Playa', roomGuide:'Volver a Mi Habitación', checkout:'Check-Out', recipes:'Recetas Sin Cocinar' },
-    home:{ greeting:'Bienvenido a MiPA 🌿', sub:'Tu conserje digital en Milazzo', checkinNew:'Necesito hacer el check-in', checkinNewDesc:'Sube tus documentos de identidad', checkinDone:'Ya hice el check-in', checkinDoneDesc:'Ir directamente a la app' },
-    dash:{ welcome:'MiPA Companion', sub:'¿En qué podemos ayudarte?' },
-    upload:{ title:'Sube tus documentos de identidad', dropText:'Toca para añadir fotos', dropSub:'Pasaporte, DNI o carnet de conducir', remove:'Eliminar', attachNote:"Por favor adjunte las fotos manualmente", sendWa:"Enviar por WhatsApp", waMsg:"¡Hola! Le envío mis documentos de identidad para el check-in en MiPA, Milazzo. Encontrará las fotos adjuntas. ¡Gracias!", continue:'Continuar a info del alojamiento', sent:'Documentos enviados ✓' },
+    install:{ title:'Instalar app Via Nazionale', sub:'Añadir a tu pantalla de inicio', btn:'Instalar', dismiss:'Ignorar', iosStep1:'1. Toca el botón Compartir en Safari (□↑)', iosStep2:'2. Desplázate y toca "Añadir a la pantalla de inicio"' },
+    tabs:{ info:'Info del Alojamiento', philosophy:'Nuestra Filosofía', contacts:'Contactos', directions:'Llegar/Salir del Alojamiento', map:'Mapa Interactivo', breakfast:'Itinerario Diario', bookServices:'Reservar Servicios', events:'Eventos en la Ciudad', museums:'Museos y Monumentos', beach:'Llévame a la Playa', roomGuide:'Volver a Mi Habitación', checkout:'Check-Out', recipes:'Recetas Sin Cocinar', schedine:'Documentos de huéspedes / Alloggiati Web' },
+    home:{ greeting:'Bienvenido a Via Nazionale 🌿', sub:'Tu conserje digital en San Filippo del Mela', checkinNew:'Documentos de huéspedes / Alloggiati Web', checkinNewDesc:'Añade huéspedes y envía el archivo de registro', checkinDone:'Ya hice el check-in', checkinDoneDesc:'Ir directamente a la app' },
+    dash:{ welcome:'Via Nazionale Companion', sub:'¿En qué podemos ayudarte?' },
+    upload:{ title:'Documentos de huéspedes / Alloggiati Web', dropText:'Toca para añadir fotos', dropSub:'Pasaporte, DNI o carnet de conducir', remove:'Eliminar', attachNote:"Por favor adjunte las fotos manualmente", sendWa:"Enviar por WhatsApp", waMsg:"¡Hola! Adjunto el archivo de registro de huéspedes (schedine alloggiati). ¡Gracias!", continue:'Continuar a info del alojamiento', sent:'Documentos enviados ✓',
+      ocrButton:'Extraer datos (OCR)', ocrProcessing:'Leyendo tus documentos…', ocrErrorMsg:"No se pudo contactar con el servicio OCR en línea. Completa todos los campos manualmente.",
+      techDetailsToggle:'Detalles técnicos',
+      reviewTitle:'Revisa los datos del huésped', reviewSub:'Verifica y completa cada campo antes de añadir a este huésped — los datos se capturan tal como aparecen en el documento.',
+      sectionStay:'Estancia', sectionAnagrafica:'Datos personales', sectionNascita:'Lugar de nacimiento y nacionalidad', sectionDocumento:'Documento de identidad',
+      fDocType:'Tipo de documento', fSurname:'Apellido', fGivenNames:'Nombre(s)', fNumber:'Número de documento', fDob:'Fecha de nacimiento',
+      fSesso:'Sexo', fTipoAlloggiato:'Tipo de huésped', fDataArrivo:'Fecha de llegada', fDataPartenza:'Fecha de salida',
+      fStatoNascita:'País de nacimiento', fComuneNascita:'Lugar de nacimiento', fProvinciaNascita:'Provincia de nacimiento (código de 2 letras, solo Italia)', fCittadinanza:'Nacionalidad', fLuogoRilascio:'Lugar de expedición del documento',
+      ocrConfidenceLabel:'Fiabilidad del OCR',
+      confirmAdd:'Añadir huésped a la lista', backToPhotos:'Volver a las fotos', backToList:'Volver a la lista de huéspedes',
+      listTitle:'Huéspedes de esta reserva', listEmpty:'Aún no se han añadido huéspedes.', addGuestBtn:'Añadir un huésped',
+      showPreview:'Vista previa del archivo JSON', hidePreview:'Ocultar vista previa',
+      sendAutoBtn:'Enviar automáticamente (Google Sheet)', sending:'Enviando…', sentAutomatically:'Enviado ✓',
+      sendErrorMsg:"No se pudo escribir automáticamente en Google Sheet. Prueba con WhatsApp o descarga el archivo debajo.", downloadBtn:'Descargar archivo',
+
+      validationTitle:'Completa estos campos antes de continuar:', yesterday:'ayer', today:'hoy', tomorrow:'mañana',
+      disclaimerShort:'Las fotos son procesadas por un servicio OCR de terceros: tus datos serán tratados por ese tercero y el resultado puede contener errores. Si prefieres evitarlo, continúa con la introducción manual.',
+      disclaimerLinkText:'Saber más', disclaimerBack:'Volver a la entrada del huésped',
+      manualEntryBtn:'Rellenar manualmente (sin fotos ni OCR)',
+      downloadedManualMsg:'Archivo descargado. Envíalo con la herramienta que prefieras: WhatsApp, Telegram, correo electrónico u otra aplicación.',
+      disclaimer: {
+        title:'Cómo se tratan tus datos',
+        paragraphs:[
+          "Cuando usas la extracción automática de datos (OCR), las fotos que tomas se envían a Google Cloud Vision, un servicio de terceros, para leer el texto del documento. Google las procesa solo para devolver el resultado y, según su política declarada, no las usa para entrenar sus modelos.",
+          "Una vez confirmado un huésped y elegido enviar los datos, estos se transmiten al alojamiento de forma automática (escritos directamente en una Google Sheet mediante la API de Google Sheets) o, si eliges esa opción, se comparten directamente por WhatsApp desde tu dispositivo, o se descargan como archivo para que lo envíes como prefieras.",
+          "La extracción automática es una comodidad, no una garantía: los resultados del OCR pueden contener errores, especialmente con documentos dañados, con reflejos o con formatos poco habituales. Cada campo se te muestra siempre para su revisión y debe comprobarse y corregirse antes de añadir a un huésped — la app no te deja continuar si faltan campos obligatorios.",
+          "Al elegir usar la extracción automática por OCR, aceptas que la foto del documento sea procesada por el servicio de terceros descrito anteriormente, y eres responsable de verificar la exactitud de cada campo antes de su envío. Si prefieres no usar esta función, puedes rellenar todos los campos a mano: en ese caso no se toma ni se envía ninguna foto a ningún sitio.",
+          "Los datos introducidos en esta app se guardan solo en tu dispositivo (en el almacenamiento local del navegador) hasta que decidas enviarlos, y se borran cuando usas la función de checkout.",
+        ],
+      },
+    },
     info:{ general:'Información General', contacts:'Contactos', address:'Dirección', phone:'Teléfono', whatsapp:'Chat en WhatsApp', checkin:'15:00 – 22:00', checkout:'Antes de las 10:30', wifiConnect:'Conectar al WiFi' },
     itinerary:{ desc:'Descubre lo mejor de la ciudad con este itinerario cuidadosamente planificado.', btn:'Explorar Milazzo' },
     map:{ title:'Mapa Interactivo de Milazzo', desc:'Atracciones, monumentos y joyas ocultas.', openMaps:'Abrir en Google Maps' },
     beach:{ desc:'Navega directamente a la playa más cercana — aguas cristalinas del Tirreno te esperan.', btnTitle:'Llévame a la playa', btnSub:'Abre Google Maps · Navegación' },
-    room:{ desc:'Déjanos guiarte de vuelta a MiPA.', btnTitle:'Navegar a MiPA', btnSub:'Abre Google Maps · Ruta' },
+    room:{ desc:'Déjanos guiarte de vuelta a Via Nazionale.', btnTitle:'Navegar a Via Nazionale', btnSub:'Abre Google Maps · Ruta' },
     co:{ desc1:'¡Gracias por tu estancia! Antes de salir, por favor:', steps:['Deja todas las llaves dentro de la habitación.','Recoge todos tus objetos personales, incluyendo cargadores y electrónicos.','Revisa la habitación por si olvidaste algo.','Liquida cualquier pago pendiente, incluyendo la tasa turística.'], note:'Si olvidas algo, ofrecemos servicio de reenvío por correo (con cargo).', desc2:'Cuando estés listo, pulsa el botón para avisarnos. ¡Gracias!', btn:'Completar Check-Out' },
     events:{ desc:'Eventos en Milazzo y alrededores — actualizados regularmente.', showPast:'Mostrar eventos pasados', hidePast:'Ocultar eventos pasados', noUpcoming:'No hay eventos próximos. ¡Vuelve pronto!' },
     philosophy:['Acoger sin dejar huella: ahí empieza todo. En el corazón de Milazzo, donde el ritmo de la ciudad se encuentra con el mar, imaginamos un espacio capaz de integrarse de forma natural y discreta en el tejido urbano, ofreciendo una estancia cómoda y auténtica.','Todas nuestras habitaciones —junior suites— están cuidadas hasta el último detalle: luz natural, insonorización, sistemas eficientes que minimizan el desperdicio. Espacios generosos y equilibrados diseñados para un bienestar genuino y profundo, basado en la calidad y la armonía.','La sostenibilidad es una elección concreta, vivida cada día con verdadero compromiso. Hemos eliminado el plástico de un solo uso y el papel desechable, ofrecemos agua potable gratuita y utilizamos únicamente energía de fuentes renovables. Así contribuimos a una hospitalidad verdaderamente responsable.','Estar en el centro significa descubrir la ciudad de forma auténtica. Trabajamos para promover la movilidad suave como el ciclismo, con itinerarios y mapas dedicados para navegar fácilmente y reducir la huella ambiental.','Creemos en una hospitalidad donde responsabilidad y comodidad se fusionan sin compromisos. Ya hemos pensado en todo: los huéspedes no necesitan hacer nada diferente ni adoptar ningún comportamiento especial. Pueden simplemente relajarse y disfrutar de sus vacaciones, mientras actuamos discretamente para minimizar nuestro impacto. Lo que queda es el recuerdo de un viaje ligero, auténtico y consciente — con una huella mínima en el entorno y una marca positiva en uno mismo.'],
-    dir:{ arriving:'Llegada', leaving:'Salir de Milazzo', arrivalModes:[{icon:'directions_car',color:'#4f7d65',title:'En Coche',desc:'Sal de la autopista en el peaje de Milazzo y sigue el Viale Sicilia hasta la última salida. Aparca en la Piazza XXV Aprile (líneas azules — app EasyPark).'},{icon:'train',color:'#0284c7',title:'En Tren',desc:'Baja en la estación de Milazzo y toma las líneas 4 o 5 hasta la parada del puerto, la más cercana al alojamiento.'},{icon:'directions_bus',color:'#d97706',title:'En Autobús',desc:'Desde el aeropuerto de Catania u otros lugares, baja en la parada del puerto — la más cercana a MiPA.'}], departureModes:[{icon:'directions_car',color:'#4f7d65',title:'En Coche',desc:'Sigue el Viale Sicilia hasta el final, luego toma el enlace de Milazzo para entrar en la A20 hacia Mesina (Catania) o Palermo.'},{icon:'directions_bus',color:'#d97706',title:'En Autobús (a Mesina)',desc:'Consulta los horarios de GiuntaBus y AST para las conexiones diarias a Mesina.'},{icon:'train',color:'#0284c7',title:'En Tren',desc:'Toma las líneas 4 o 5 desde la parada del puerto hasta la estación de tren de Milazzo.'},{icon:'flight',color:'#7c3aed',title:'Aeropuerto de Catania',desc:'Conexión directa de Milazzo al aeropuerto de Catania — consulta los horarios en la parada del puerto.'}] },
+    dir:{ arriving:'Llegada', leaving:'Salir de San Filippo del Mela', arrivalModes:[{icon:'directions_car',color:'#8a1f1f',title:'En Coche',desc:'Toma la salida de autopista A20 "Milazzo": el alojamiento está a aproximadamente 1 minuto en coche de la salida, en Via Archi Nazionale 16, San Filippo del Mela. Aparcamiento gratuito cerca.'},{icon:'train',color:'#0284c7',title:'En Tren',desc:'La estación más cercana es la de Milazzo; desde allí recomendamos un taxi (unos 10 minutos) para llegar al alojamiento.'},{icon:'directions_bus',color:'#d97706',title:'En Autobús',desc:'Desde el aeropuerto de Catania u otros lugares, baja en la estación de autobuses de Milazzo y continúa en taxi hasta Via Archi Nazionale, San Filippo del Mela (unos 10 minutos).'}], departureModes:[{icon:'directions_car',color:'#8a1f1f',title:'En Coche',desc:'Desde el alojamiento basta aproximadamente 1 minuto para incorporarse a la A20 en dirección a Mesina (Catania) o Palermo.'},{icon:'directions_bus',color:'#d97706',title:'En Autobús (a Mesina)',desc:'Consulta los horarios de GiuntaBus y AST desde la estación de autobuses de Milazzo para las conexiones diarias a Mesina.'},{icon:'train',color:'#0284c7',title:'En Tren',desc:'Toma un taxi hasta la estación de Milazzo (unos 10 minutos) para las conexiones ferroviarias.'},{icon:'flight',color:'#7c3aed',title:'Aeropuerto de Catania',desc:'Conexiones directas en autobús desde Milazzo al aeropuerto de Catania — consulta los horarios en la estación de autobuses.'}] },
     services:[{emoji:'🚲',title:'Alquiler de Bicicletas',price:'Desde €10 / día',note:'Explora Milazzo en bicicleta — bicis urbanas y eléctricas disponibles.',waText:'Hola, me gustaría alquilar una bicicleta.'},{emoji:'🤿',title:'Buceo',price:'Desde €60 / persona',note:'Reserva con 24h de antelación. Aguas cristalinas te esperan.',waText:'Hola, me gustaría reservar una experiencia de buceo.'},{emoji:'⛵',title:'Tour islas Eolias (2-3 islas)',price:'Desde €40 / persona',note:'Reserva con Navisal o Tarnav. Excursiones a Lipari, Stromboli, Vulcano.',waText:'Hola, me gustaría información sobre el tour de las islas Eolias.'},{emoji:'🛥️',title:'Tour privado islas Eolias',price:'Desde €100 / persona',note:'Barco privado exclusivo. Itinerario personalizable.',waText:'Hola, me gustaría reservar un tour privado a las islas Eolias.'}]
   },
   de: {
     back:'Zurück', openMaps:'In Maps öffnen', bookWa:'Per WhatsApp buchen',
     offline:'Sie sind offline — einige Inhalte werden möglicherweise nicht geladen.',
-    install:{ title:'MiPA App installieren', sub:'Zum Home-Bildschirm hinzufügen', btn:'Installieren', dismiss:'Schließen', iosStep1:'1. Tippen Sie auf die Teilen-Schaltfläche in Safari (□↑)', iosStep2:'2. Scrollen Sie und tippen Sie auf "Zum Home-Bildschirm"' },
-    tabs:{ info:'Unterkunftsinfos', philosophy:'Unsere Philosophie', contacts:'Kontakte', directions:'An- und Abreise', map:'Interaktive Karte', breakfast:'Tagesausflug', bookServices:'Services buchen', events:'Stadtveranstaltungen', museums:'Museen & Denkmäler', beach:'Bring mich zum Strand', roomGuide:'Zurück zu meinem Zimmer', checkout:'Check-Out', recipes:'Rezepte Ohne Kochen' },
-    home:{ greeting:'Willkommen bei MiPA 🌿', sub:'Ihr digitaler Concierge in Milazzo', checkinNew:'Ich muss einchecken', checkinNewDesc:'Laden Sie Ihre Ausweisdokumente hoch', checkinDone:'Ich habe bereits eingecheckt', checkinDoneDesc:'Direkt zur App' },
-    dash:{ welcome:'MiPA Companion', sub:'Wie können wir Ihnen helfen?' },
-    upload:{ title:'Laden Sie Ihre Ausweisdokumente hoch', dropText:'Tippen zum Hinzufügen von Fotos', dropSub:'Reisepass, Personalausweis oder Führerschein', remove:'Entfernen', attachNote:"Bitte fügen Sie die Fotos manuell bei", sendWa:"Per WhatsApp senden", waMsg:"Guten Tag! Ich sende Ihnen meine Ausweisdokumente für den Check-in im MiPA, Milazzo. Die Fotos sind beigefügt. Danke!", continue:'Weiter zu den Unterkunftsinformationen', sent:'Dokumente gesendet ✓' },
+    install:{ title:'Via Nazionale App installieren', sub:'Zum Home-Bildschirm hinzufügen', btn:'Installieren', dismiss:'Schließen', iosStep1:'1. Tippen Sie auf die Teilen-Schaltfläche in Safari (□↑)', iosStep2:'2. Scrollen Sie und tippen Sie auf "Zum Home-Bildschirm"' },
+    tabs:{ info:'Unterkunftsinfos', philosophy:'Unsere Philosophie', contacts:'Kontakte', directions:'An- und Abreise', map:'Interaktive Karte', breakfast:'Tagesausflug', bookServices:'Services buchen', events:'Stadtveranstaltungen', museums:'Museen & Denkmäler', beach:'Bring mich zum Strand', roomGuide:'Zurück zu meinem Zimmer', checkout:'Check-Out', recipes:'Rezepte Ohne Kochen', schedine:'Gästedokumente / Alloggiati Web' },
+    home:{ greeting:'Willkommen bei Via Nazionale 🌿', sub:'Ihr digitaler Concierge in San Filippo del Mela', checkinNew:'Gästedokumente / Alloggiati Web', checkinNewDesc:'Gäste hinzufügen und die Registrierungsdatei senden', checkinDone:'Ich habe bereits eingecheckt', checkinDoneDesc:'Direkt zur App' },
+    dash:{ welcome:'Via Nazionale Companion', sub:'Wie können wir Ihnen helfen?' },
+    upload:{ title:'Gästedokumente / Alloggiati Web', dropText:'Tippen, um Fotos hinzuzufügen', dropSub:'Reisepass, Personalausweis oder Führerschein', remove:'Entfernen', attachNote:'Bitte fügen Sie die Fotos manuell bei', sendWa:'Über WhatsApp senden', waMsg:'Guten Tag! Anbei die Registrierungsdatei der Gäste (schedine alloggiati). Danke!', continue:'Weiter zu den Unterkunftsinfos', sent:'Dokumente gesendet ✓',
+      ocrButton:'Daten extrahieren (OCR)', ocrProcessing:'Ihre Dokumente werden gelesen…', ocrErrorMsg:'Der Online-OCR-Dienst konnte nicht erreicht werden. Bitte füllen Sie alle Felder manuell aus.',
+      techDetailsToggle:'Technische Details',
+      reviewTitle:'Gästedaten prüfen', reviewSub:'Bitte überprüfen und vervollständigen Sie jedes Feld, bevor Sie diesen Gast hinzufügen — die Daten werden genau so erfasst, wie sie auf dem Dokument stehen.',
+      sectionStay:'Aufenthalt', sectionAnagrafica:'Persönliche Daten', sectionNascita:'Geburtsort & Staatsangehörigkeit', sectionDocumento:'Ausweisdokument',
+      fDocType:'Dokumenttyp', fSurname:'Nachname', fGivenNames:'Vorname(n)', fNumber:'Dokumentennummer', fDob:'Geburtsdatum',
+      fSesso:'Geschlecht', fTipoAlloggiato:'Gästetyp', fDataArrivo:'Ankunftsdatum', fDataPartenza:'Abreisedatum',
+      fStatoNascita:'Geburtsland', fComuneNascita:'Geburtsort', fProvinciaNascita:'Geburtsprovinz (2-Buchstaben-Code, nur Italien)', fCittadinanza:'Staatsangehörigkeit', fLuogoRilascio:'Ausstellungsort des Dokuments',
+      ocrConfidenceLabel:'OCR-Zuverlässigkeit',
+      confirmAdd:'Gast zur Liste hinzufügen', backToPhotos:'Zurück zu den Fotos', backToList:'Zurück zur Gästeliste',
+      listTitle:'Gäste dieser Buchung', listEmpty:'Noch keine Gäste hinzugefügt.', addGuestBtn:'Gast hinzufügen',
+      showPreview:'JSON-Datei-Vorschau', hidePreview:'Vorschau ausblenden',
+      sendAutoBtn:'Automatisch senden (Google Sheet)', sending:'Wird gesendet…', sentAutomatically:'Gesendet ✓',
+      sendErrorMsg:'Automatisches Schreiben in Google Sheet fehlgeschlagen. Versuchen Sie WhatsApp oder laden Sie die Datei unten herunter.', downloadBtn:'Datei herunterladen',
+
+      validationTitle:'Bitte vervollständigen Sie diese Felder, bevor Sie fortfahren:', yesterday:'gestern', today:'heute', tomorrow:'morgen',
+      disclaimerShort:'Die Fotos werden von einem OCR-Dienst eines Drittanbieters verarbeitet: Ihre Daten werden von diesem Dritten verarbeitet, und das Ergebnis kann Fehler enthalten. Wenn Sie dies vermeiden möchten, nutzen Sie stattdessen die manuelle Eingabe.',
+      disclaimerLinkText:'Mehr erfahren', disclaimerBack:'Zurück zur Gästeeingabe',
+      manualEntryBtn:'Manuell ausfüllen (ohne Fotos, ohne OCR)',
+      downloadedManualMsg:'Datei heruntergeladen. Senden Sie sie mit dem Tool Ihrer Wahl: WhatsApp, Telegram, E-Mail oder einer anderen App.',
+      disclaimer: {
+        title:'Wie mit Ihren Daten umgegangen wird',
+        paragraphs:[
+          'Wenn Sie die automatische Datenextraktion (OCR) verwenden, werden die aufgenommenen Fotos an Google Cloud Vision gesendet, einen Drittanbieterdienst, um den Text auf dem Dokument zu lesen. Google verarbeitet sie nur, um das Ergebnis zurückzugeben, und nutzt sie laut eigener Richtlinie nicht zum Training seiner Modelle.',
+          'Sobald ein Gast bestätigt und der Versand der Daten gewählt wurde, werden diese entweder automatisch an die Unterkunft übermittelt (direkt in ein Google Sheet über die Google Sheets API geschrieben) oder, falls Sie diese Option wählen, direkt über WhatsApp von Ihrem Gerät aus geteilt, oder als Datei heruntergeladen, um sie nach Belieben zu versenden.',
+          'Die automatische Extraktion ist eine Komfortfunktion, keine Garantie: OCR-Ergebnisse können Fehler enthalten, besonders bei beschädigten, spiegelnden oder ungewöhnlich formatierten Dokumenten. Jedes Feld wird Ihnen stets zur Überprüfung angezeigt und muss vor dem Hinzufügen eines Gastes kontrolliert und korrigiert werden — die App lässt Sie nicht fortfahren, wenn Pflichtfelder leer sind.',
+          'Mit der Nutzung der automatischen OCR-Extraktion akzeptieren Sie, dass das Dokumentenfoto vom oben beschriebenen Drittanbieterdienst verarbeitet wird, und Sie sind dafür verantwortlich, die Richtigkeit jedes Feldes vor dem Versand zu überprüfen. Wenn Sie diese Funktion lieber nicht nutzen möchten, können Sie alle Felder manuell ausfüllen — in diesem Fall wird kein Foto aufgenommen oder irgendwohin gesendet.',
+          'In dieser App eingegebene Daten werden nur auf Ihrem Gerät gespeichert (im lokalen Speicher des Browsers), bis Sie sich für den Versand entscheiden, und werden gelöscht, wenn Sie die Check-out-Funktion nutzen.',
+        ],
+      },
+    },
     info:{ general:'Allgemeine Informationen', contacts:'Kontakte', address:'Adresse', phone:'Telefon', whatsapp:'WhatsApp Chat', checkin:'15:00 – 22:00 Uhr', checkout:'Bis 10:30 Uhr', wifiConnect:'Mit WLAN verbinden' },
     itinerary:{ desc:'Entdecken Sie das Beste der Stadt mit diesem sorgfältig geplanten Reiseverlauf.', btn:'Milazzo erkunden' },
     map:{ title:'Interaktive Karte von Milazzo', desc:'Sehenswürdigkeiten, Wahrzeichen und versteckte Schätze.', openMaps:'In Google Maps öffnen' },
     beach:{ desc:'Navigieren Sie direkt zum nächsten Strand — kristallklares Tyrrhenisches Meer wartet.', btnTitle:'Bring mich zum Strand', btnSub:'Öffnet Google Maps · Navigation' },
-    room:{ desc:'Lassen Sie uns Sie zurück zu MiPA führen.', btnTitle:'Zu MiPA navigieren', btnSub:'Öffnet Google Maps · Wegbeschreibung' },
+    room:{ desc:'Lassen Sie uns Sie zurück zu Via Nazionale führen.', btnTitle:'Zu Via Nazionale navigieren', btnSub:'Öffnet Google Maps · Wegbeschreibung' },
     co:{ desc1:'Vielen Dank für Ihren Aufenthalt! Bevor Sie abreisen, beachten Sie bitte:', steps:['Lassen Sie alle Zimmerschlüssel im Zimmer.','Sammeln Sie alle persönlichen Gegenstände, einschließlich Ladegeräte.','Überprüfen Sie das Zimmer sorgfältig auf vergessene Gegenstände.','Begleichen Sie alle offenen Zahlungen, einschließlich der Kurtaxe.'], note:'Sollten Sie etwas vergessen haben, bieten wir einen Rücksendeservice an (Gebühren fallen an).', desc2:'Wenn Sie bereit sind, tippen Sie auf die Schaltfläche unten. Danke!', btn:'Check-Out abschließen' },
     events:{ desc:'Veranstaltungen in Milazzo und Umgebung — regelmäßig aktualisiert.', showPast:'Vergangene Events anzeigen', hidePast:'Vergangene Events ausblenden', noUpcoming:'Derzeit keine bevorstehenden Veranstaltungen. Schauen Sie bald wieder vorbei!' },
     philosophy:['Willkommen heißen, ohne Spuren zu hinterlassen: das ist der Ausgangspunkt von allem. Im Herzen von Milazzo, wo der Stadtrhythmus auf das Meer trifft, haben wir uns einen Raum vorgestellt, der sich auf natürliche und diskrete Weise in das städtische Gefüge einfügt und einen komfortablen, authentischen Aufenthalt bietet.','Alle unsere Zimmer — Junior-Suiten — sind bis ins kleinste Detail gepflegt: natürliches Licht, Schalldämmung, effiziente Anlagen, die Verschwendung reduzieren. Großzügige, ausgewogene Räume, die auf echtes und tiefes Wohlbefinden ausgerichtet sind, das aus Qualität und Harmonie besteht.','Nachhaltigkeit ist eine konkrete Wahl, die jeden Tag mit echtem Engagement gelebt wird. Wir haben Einwegplastik und Einwegpapier eliminiert, bieten kostenloses Trinkwasser an und nutzen ausschließlich Energie aus erneuerbaren Quellen. So leisten wir einen Beitrag zu einer wirklich verantwortungsvollen Gastfreundschaft.','Im Stadtzentrum zu sein bedeutet, die Stadt auf authentische Weise zu entdecken. Wir arbeiten daran, sanfte Mobilität wie das Fahrrad zu fördern, mit eigenen Routen und Karten, um sich leicht zu orientieren und die Umweltbelastung zu reduzieren.','Wir glauben an eine Gastfreundschaft, bei der Verantwortung und Komfort ohne Kompromisse verschmelzen. Wir haben bereits an alles gedacht: Der Gast muss nichts anderes tun oder besondere umweltbewusste Verhaltensweisen annehmen. Er kann sich einfach entspannen und seinen Urlaub genießen, während wir diskret handeln, um unseren Einfluss zu minimieren. Was bleibt, ist die Erinnerung an eine leichte, authentische und bewusste Reise — mit einem minimalen Fußabdruck auf der Umwelt und einem positiven Zeichen in sich selbst.'],
-    dir:{ arriving:'Anreise', leaving:'Abreise aus Milazzo', arrivalModes:[{icon:'directions_car',color:'#4f7d65',title:'Mit dem Auto',desc:'Verlassen Sie die Autobahn an der Mautstelle Milazzo und folgen Sie dem Viale Sicilia bis zur letzten Ausfahrt. Parken auf der Piazza XXV Aprile (blaue Linien — EasyPark-App).'},{icon:'train',color:'#0284c7',title:'Mit dem Zug',desc:'Steigen Sie am Bahnhof Milazzo aus und nehmen Sie die Linien 4 oder 5 bis zur Hafenhaltestelle.'},{icon:'directions_bus',color:'#d97706',title:'Mit dem Bus',desc:'Vom Flughafen Catania oder anderen Orten steigen Sie an der Hafenhaltestelle aus — die nächstgelegene zu MiPA.'}], departureModes:[{icon:'directions_car',color:'#4f7d65',title:'Mit dem Auto',desc:'Folgen Sie dem Viale Sicilia bis zum Ende, dann nehmen Sie die Ausfahrt Milazzo auf die A20 Richtung Messina oder Palermo.'},{icon:'directions_bus',color:'#d97706',title:'Mit dem Bus (nach Messina)',desc:'Prüfen Sie die Fahrpläne von GiuntaBus und AST für tägliche Verbindungen nach Messina.'},{icon:'train',color:'#0284c7',title:'Mit dem Zug',desc:'Nehmen Sie die Linien 4 oder 5 von der Hafenhaltestelle zum Bahnhof Milazzo.'},{icon:'flight',color:'#7c3aed',title:'Flughafen Catania',desc:'Direktverbindung von Milazzo zum Flughafen Catania — Fahrpläne an der Hafenhaltestelle.'}] },
+    dir:{ arriving:'Anreise', leaving:'Abreise aus San Filippo del Mela', arrivalModes:[{icon:'directions_car',color:'#8a1f1f',title:'Mit dem Auto',desc:'Nehmen Sie die Autobahnausfahrt A20 „Milazzo": Die Unterkunft liegt etwa 1 Autominute von der Ausfahrt entfernt, in der Via Archi Nazionale 16, San Filippo del Mela. Kostenlose Parkplätze in der Nähe.'},{icon:'train',color:'#0284c7',title:'Mit dem Zug',desc:'Der nächstgelegene Bahnhof ist Milazzo; von dort empfehlen wir ein Taxi (ca. 10 Minuten) zur Unterkunft.'},{icon:'directions_bus',color:'#d97706',title:'Mit dem Bus',desc:'Vom Flughafen Catania oder anderen Orten steigen Sie am Busbahnhof Milazzo aus und fahren mit dem Taxi weiter zur Via Archi Nazionale, San Filippo del Mela (ca. 10 Minuten).'}], departureModes:[{icon:'directions_car',color:'#8a1f1f',title:'Mit dem Auto',desc:'Von der Unterkunft aus erreichen Sie die A20 Richtung Messina (Catania) oder Palermo in etwa 1 Minute.'},{icon:'directions_bus',color:'#d97706',title:'Mit dem Bus (nach Messina)',desc:'Prüfen Sie die Fahrpläne von GiuntaBus und AST ab dem Busbahnhof Milazzo für tägliche Verbindungen nach Messina.'},{icon:'train',color:'#0284c7',title:'Mit dem Zug',desc:'Nehmen Sie ein Taxi zum Bahnhof Milazzo (ca. 10 Minuten) für Zugverbindungen.'},{icon:'flight',color:'#7c3aed',title:'Flughafen Catania',desc:'Direkte Busverbindungen von Milazzo zum Flughafen Catania — Fahrpläne am Busbahnhof prüfen.'}] },
     services:[{emoji:'🚲',title:'Fahrradverleih',price:'Ab €10 / Tag',note:'Erkunden Sie Milazzo per Rad — Stadtfahrräder und E-Bikes verfügbar.',waText:'Hallo, ich möchte ein Fahrrad mieten.'},{emoji:'🤿',title:'Tauchen',price:'Ab €60 / Person',note:'24h im Voraus buchen. Kristallklares Wasser wartet.',waText:'Hallo, ich möchte einen Tauchgang buchen.'},{emoji:'⛵',title:'Äolische Inseln Tour (2-3 Inseln)',price:'Ab €40 / Person',note:'Bei Navisal oder Tarnav buchen.',waText:'Hallo, ich möchte Infos zur Äolischen Inseln Tour.'},{emoji:'🛥️',title:'Private Äolische Inseln Tour',price:'Ab €100 / Person',note:'Privat-Bootstour mit anpassbarem Reiseprogramm.',waText:'Hallo, ich möchte eine private Tour zu den Äolischen Inseln buchen.'}]
   },
   zh: {
     back:'返回', openMaps:'在地图中打开', bookWa:'通过WhatsApp预订',
     offline:'您处于离线状态 — 部分内容可能无法加载。',
-    install:{ title:'安装MiPA应用', sub:'添加到主屏幕以便快速访问', btn:'安装', dismiss:'忽略', iosStep1:'1. 在Safari中点击分享按钮 (□↑)', iosStep2:'2. 滚动并点击"添加到主屏幕"' },
-    tabs:{ info:'结构信息', philosophy:'我们的理念', contacts:'联系方式', directions:'到达/离开米拉佐', map:'互动地图', breakfast:'每日行程', bookServices:'预订服务', events:'城市活动', museums:'博物馆与古迹', beach:'带我去海滩', roomGuide:'回到我的房间', checkout:'退房', recipes:'免煮食谱' },
-    home:{ greeting:'欢迎来到MiPA 🌿', sub:'您在米拉佐的数字礼宾', checkinNew:'我需要办理入住', checkinNewDesc:'上传您的身份证件', checkinDone:'我已经办理了入住', checkinDoneDesc:'直接进入应用' },
-    dash:{ welcome:'MiPA Companion', sub:'我们能为您做什么？' },
-    upload:{ title:'上传您的身份证件', dropText:'点击添加照片', dropSub:'护照、身份证或驾照', remove:'删除', attachNote:"请手动附上照片", sendWa:"通过WhatsApp发送", waMsg:"您好！我发送我的身份证件用于MiPA米拉佐的入住登记。请查收附件中的照片。谢谢！", continue:'继续查看住宿信息', sent:'文件已发送 ✓' },
+    install:{ title:'安装Via Nazionale应用', sub:'添加到主屏幕以便快速访问', btn:'安装', dismiss:'忽略', iosStep1:'1. 在Safari中点击分享按钮 (□↑)', iosStep2:'2. 滚动并点击"添加到主屏幕"' },
+    tabs:{ info:'结构信息', philosophy:'我们的理念', contacts:'联系方式', directions:'到达/离开住宿', map:'互动地图', breakfast:'每日行程', bookServices:'预订服务', events:'城市活动', museums:'博物馆与古迹', beach:'带我去海滩', roomGuide:'回到我的房间', checkout:'退房', recipes:'免煮食谱', schedine:'客人证件 / Alloggiati Web' },
+    home:{ greeting:'欢迎来到Via Nazionale 🌿', sub:'您在圣菲利波德梅拉的数字礼宾', checkinNew:'客人证件 / Alloggiati Web', checkinNewDesc:'添加客人信息并发送登记文件', checkinDone:'我已经办理了入住', checkinDoneDesc:'直接进入应用' },
+    dash:{ welcome:'Via Nazionale Companion', sub:'我们能为您做什么？' },
+    upload:{ title:'客人证件 / Alloggiati Web', dropText:'点击添加照片', dropSub:'护照、身份证或驾照', remove:'删除', attachNote:'请手动附上照片', sendWa:'通过WhatsApp发送', waMsg:'您好！附件为客人登记文件（schedine alloggiati）。谢谢！', continue:'继续查看住宿信息', sent:'文件已发送 ✓',
+      ocrButton:'提取数据（OCR）', ocrProcessing:'正在读取您的证件…', ocrErrorMsg:'无法连接在线OCR服务，请手动填写所有字段。',
+      techDetailsToggle:'技术细节',
+      reviewTitle:'核对客人信息', reviewSub:'请在添加此客人之前核对并补全每个字段——数据按证件上显示的内容录入。',
+      sectionStay:'住宿信息', sectionAnagrafica:'个人信息', sectionNascita:'出生地与国籍', sectionDocumento:'身份证件',
+      fDocType:'证件类型', fSurname:'姓', fGivenNames:'名', fNumber:'证件号码', fDob:'出生日期',
+      fSesso:'性别', fTipoAlloggiato:'客人类型', fDataArrivo:'到达日期', fDataPartenza:'离开日期',
+      fStatoNascita:'出生国家', fComuneNascita:'出生地', fProvinciaNascita:'出生省份（两字母代码，仅限意大利）', fCittadinanza:'国籍', fLuogoRilascio:'证件签发地',
+      ocrConfidenceLabel:'OCR识别可信度',
+      confirmAdd:'将客人添加到列表', backToPhotos:'返回照片', backToList:'返回客人列表',
+      listTitle:'本次预订的客人', listEmpty:'尚未添加任何客人。', addGuestBtn:'添加客人',
+      showPreview:'预览JSON文件', hidePreview:'隐藏预览',
+      sendAutoBtn:'自动发送（Google Sheet）', sending:'发送中…', sentAutomatically:'已发送 ✓',
+      sendErrorMsg:'无法自动写入Google Sheet。请尝试WhatsApp，或在下方下载文件。', downloadBtn:'下载文件',
+
+      validationTitle:'请在继续前完成以下字段：', yesterday:'昨天', today:'今天', tomorrow:'明天',
+      disclaimerShort:'照片将由第三方OCR服务处理：您的数据将由该第三方处理，结果可能包含错误。如果您希望避免这种情况，请改用手动录入。',
+      disclaimerLinkText:'了解更多', disclaimerBack:'返回客人信息录入',
+      manualEntryBtn:'手动填写（不拍照，不使用OCR）',
+      downloadedManualMsg:'文件已下载。请使用您喜欢的方式发送：WhatsApp、Telegram、邮件或其他应用。',
+      disclaimer: {
+        title:'您的数据如何被处理',
+        paragraphs:[
+          '当您使用自动数据提取（OCR）功能时，您拍摄的照片会被发送至第三方服务Google Cloud Vision以读取证件上的文字。谷歌仅为返回识别结果而处理这些照片，并根据其declared政策不会用于训练其模型。',
+          '当您确认一位客人的信息并选择发送数据后，数据会自动传输给住宿方（通过Google Sheets API直接写入Google Sheet），或者，如果您选择该选项，可直接通过您设备上的WhatsApp分享，或下载为文件后按您喜欢的方式发送。',
+          '自动提取是一项便利功能，而非保证：OCR识别结果可能包含错误，尤其是在证件损坏、反光或格式不常见的情况下。每个字段都会始终显示给您核对，且必须在添加客人前检查并更正——如果必填字段为空，应用将不允许继续。',
+          '选择使用自动OCR提取功能，即表示您同意证件照片将由上述第三方服务处理，并且您有责任在发送前核实每个字段的准确性。如果您不想使用此功能，也可以手动填写所有字段——在这种情况下，不会拍摄或发送任何照片。',
+          '在本应用中输入的数据仅保存在您的设备上（浏览器本地存储），直至您选择发送，并会在您使用退房功能时被清除。',
+        ],
+      },
+    },
     info:{ general:'一般信息', contacts:'联系方式', address:'地址', phone:'电话', whatsapp:'WhatsApp聊天', checkin:'下午3:00 – 晚上10:00', checkout:'上午10:30前', wifiConnect:'连接WiFi' },
     itinerary:{ desc:'通过这个精心规划的行程，发现城市的最佳景点。', btn:'探索米拉佐' },
     map:{ title:'米拉佐互动地图', desc:'景点、地标和隐藏宝藏。', openMaps:'在谷歌地图中打开' },
     beach:{ desc:'直接导航到最近的海滩 — 清澈的第勒尼安海水等待着您。', btnTitle:'带我去海滩', btnSub:'打开谷歌地图 · 导航' },
-    room:{ desc:'让我们引导您回到MiPA。', btnTitle:'导航到MiPA', btnSub:'打开谷歌地图 · 路线' },
+    room:{ desc:'让我们引导您回到Via Nazionale。', btnTitle:'导航到Via Nazionale', btnSub:'打开谷歌地图 · 路线' },
     co:{ desc1:'感谢您选择入住！离开前，请注意：', steps:['将所有钥匙留在房间内。','收拾所有个人物品，包括充电器和电子设备。','仔细检查房间，确保没有遗漏任何物品。','结清所有未付款项，包括城市税。'], note:'如果遗忘了物品，我们提供邮寄返回服务（需额外付费）。', desc2:'准备好后，点击下方按钮通知我们。谢谢！', btn:'完成退房' },
     events:{ desc:'米拉佐及周边活动 — 定期更新。', showPast:'显示过去的活动', hidePast:'隐藏过去的活动', noUpcoming:'目前没有即将举行的活动。请稍后再查看！' },
     philosophy:['接待客人，不留痕迹：一切由此而生。在米拉佐的心脏地带，城市的节奏与大海相遇，我们构想了一个能够自然、低调地融入城市肌理的空间，为宾客提供舒适而真实的住宿体验。','我们所有的房间——精品套房——都精心打磨每一处细节：自然采光、隔音设计、高效节能系统。宽敞、平衡的空间，旨在提供由品质与和谐构成的真实而深层的舒适感。','可持续发展是一种具体的选择，每天以真正的承诺去践行。我们已消除一次性塑料和一次性纸制品，提供免费饮用水，并仅使用可再生能源。由此，我们为真正负责任的待客之道作出贡献。','身处市中心意味着真实地探索这座城市。我们正致力于推广骑自行车等温和出行方式，配有专属路线和地图，方便导航并减少环境影响。','我们相信一种责任与舒适无妥协融合的待客之道。我们已经为您考虑好了一切：宾客无需做任何不同的事，也无需采取任何特别的环保行为。只需放松身心，享受假期，而我们则悄然行动，将影响降至最低。留下的是一段轻盈、真实而有意识的旅行记忆。'],
-    dir:{ arriving:'到达', leaving:'离开米拉佐', arrivalModes:[{icon:'directions_car',color:'#4f7d65',title:'驾车',desc:'在米拉佐收费站下高速公路，沿西西里大道行驶至最后出口。在XXV Aprile广场停车（蓝线停车位 — 使用EasyPark应用）。'},{icon:'train',color:'#0284c7',title:'乘火车',desc:'在米拉佐站下车，乘坐4或5路公交至港口站，即最近的站点。'},{icon:'directions_bus',color:'#d97706',title:'乘巴士',desc:'从卡塔尼亚机场或其他地点，在港口站下车 — 距MiPA最近。'}], departureModes:[{icon:'directions_car',color:'#4f7d65',title:'驾车',desc:'沿西西里大道行驶至尽头，然后取道米拉佐交叉口进入A20高速公路，朝墨西拿或巴勒莫方向。'},{icon:'directions_bus',color:'#d97706',title:'乘巴士（前往墨西拿）',desc:'查看GiuntaBus和AST的时刻表，了解前往墨西拿的每日班次。'},{icon:'train',color:'#0284c7',title:'乘火车',desc:'从港口站乘坐4或5路公交至米拉佐火车站。'},{icon:'flight',color:'#7c3aed',title:'卡塔尼亚机场',desc:'从米拉佐直达卡塔尼亚机场 — 在港口站查看时刻表。'}] },
+    dir:{ arriving:'到达', leaving:'离开圣菲利波德梅拉', arrivalModes:[{icon:'directions_car',color:'#8a1f1f',title:'驾车',desc:'从A20高速公路"米拉佐"出口下高速：住宿距出口约1分钟车程，地址为Via Archi Nazionale 16, San Filippo del Mela。附近有免费停车位。'},{icon:'train',color:'#0284c7',title:'乘火车',desc:'最近的车站是米拉佐站；从那里我们建议乘出租车（约10分钟）前往住宿地点。'},{icon:'directions_bus',color:'#d97706',title:'乘巴士',desc:'从卡塔尼亚机场或其他地点，在米拉佐巴士站下车，然后乘出租车前往Via Archi Nazionale, San Filippo del Mela（约10分钟）。'}], departureModes:[{icon:'directions_car',color:'#8a1f1f',title:'驾车',desc:'从住宿地点出发，约1分钟即可驶入A20高速公路，前往墨西拿（卡塔尼亚方向）或巴勒莫。'},{icon:'directions_bus',color:'#d97706',title:'乘巴士（前往墨西拿）',desc:'请查看从米拉佐巴士站出发的GiuntaBus和AST时刻表，了解前往墨西拿的每日班次。'},{icon:'train',color:'#0284c7',title:'乘火车',desc:'乘出租车前往米拉佐火车站（约10分钟）以换乘火车。'},{icon:'flight',color:'#7c3aed',title:'卡塔尼亚机场',desc:'从米拉佐有直达卡塔尼亚机场的巴士 — 请在巴士站查看时刻表。'}] },
     services:[{emoji:'🚲',title:'自行车租赁',price:'每天起价€10',note:'骑车探索米拉佐 — 提供城市自行车和电动车。',waText:'您好，我想租一辆自行车。'},{emoji:'🤿',title:'水肺潜水',price:'每人起价€60',note:'提前24小时预订。清澈的海水等待着您。',waText:'您好，我想预订一次潜水体验。'},{emoji:'⛵',title:'埃奥利安群岛之旅（2-3个岛）',price:'每人起价€40',note:'通过Navisal或Tarnav预订。',waText:'您好，我想了解埃奥利安群岛之旅的信息。'},{emoji:'🛥️',title:'埃奥利安群岛私人游',price:'每人起价€100',note:'私人游船之旅，可定制行程。',waText:'您好，我想预订埃奥利安群岛私人游。'}]
   },
   ru: {
     back:'Назад', openMaps:'Открыть в Maps', bookWa:'Забронировать через WhatsApp',
     offline:'Вы не в сети — некоторые материалы могут не загрузиться.',
-    install:{ title:'Установить приложение MiPA', sub:'Добавьте на главный экран', btn:'Установить', dismiss:'Закрыть', iosStep1:'1. Нажмите кнопку «Поделиться» в Safari (□↑)', iosStep2:'2. Прокрутите вниз и нажмите «На экран "Домой"»' },
-    tabs:{ info:'Информация об объекте', philosophy:'Наша Философия', contacts:'Контакты', directions:'Приехать/Уехать из Милаццо', map:'Интерактивная карта', breakfast:'Дневной маршрут', bookServices:'Забронировать услуги', events:'Городские мероприятия', museums:'Музеи и памятники', beach:'Отвези меня на пляж', roomGuide:'Обратно в мой номер', checkout:'Выезд', recipes:'Рецепты Без Готовки' },
-    home:{ greeting:'Добро пожаловать в MiPA 🌿', sub:'Ваш цифровой консьерж в Милаццо', checkinNew:'Мне нужно зарегистрироваться', checkinNewDesc:'Загрузите ваши документы', checkinDone:'Я уже зарегистрирован', checkinDoneDesc:'Перейти прямо в приложение' },
-    dash:{ welcome:'MiPA Companion', sub:'Чем мы можем вам помочь?' },
-    upload:{ title:'Загрузите ваши документы', dropText:'Нажмите, чтобы добавить фото', dropSub:'Паспорт, удостоверение личности или водительские права', remove:'Удалить', attachNote:"Пожалуйста, прикрепите фотографии вручную", sendWa:"Отправить через WhatsApp", waMsg:"Добрый день! Отправляю документы для заселения в MiPA, Милаццо. Фотографии во вложении. Спасибо!", continue:'Перейти к информации о размещении', sent:'Документы отправлены ✓' },
+    install:{ title:'Установить приложение Via Nazionale', sub:'Добавьте на главный экран', btn:'Установить', dismiss:'Закрыть', iosStep1:'1. Нажмите кнопку «Поделиться» в Safari (□↑)', iosStep2:'2. Прокрутите вниз и нажмите «На экран "Домой"»' },
+    tabs:{ info:'Информация об объекте', philosophy:'Наша Философия', contacts:'Контакты', directions:'Приехать/Уехать из места проживания', map:'Интерактивная карта', breakfast:'Дневной маршрут', bookServices:'Забронировать услуги', events:'Городские мероприятия', museums:'Музеи и памятники', beach:'Отвези меня на пляж', roomGuide:'Обратно в мой номер', checkout:'Выезд', recipes:'Рецепты Без Готовки', schedine:'Документы гостей / Alloggiati Web' },
+    home:{ greeting:'Добро пожаловать в Via Nazionale 🌿', sub:'Ваш цифровой консьерж в Сан-Филиппо-дель-Мела', checkinNew:'Документы гостей / Alloggiati Web', checkinNewDesc:'Добавьте гостей и отправьте файл регистрации', checkinDone:'Я уже зарегистрирован', checkinDoneDesc:'Перейти прямо в приложение' },
+    dash:{ welcome:'Via Nazionale Companion', sub:'Чем мы можем вам помочь?' },
+    upload:{ title:'Документы гостей / Alloggiati Web', dropText:'Нажмите, чтобы добавить фото', dropSub:'Паспорт, удостоверение личности или водительские права', remove:'Удалить', attachNote:'Пожалуйста, прикрепите фотографии вручную', sendWa:'Отправить через WhatsApp', waMsg:'Добрый день! Во вложении файл регистрации гостей (schedine alloggiati). Спасибо!', continue:'Перейти к информации о размещении', sent:'Документы отправлены ✓',
+      ocrButton:'Извлечь данные (OCR)', ocrProcessing:'Идёт распознавание документов…', ocrErrorMsg:'Не удалось подключиться к онлайн-сервису OCR. Заполните все поля вручную.',
+      techDetailsToggle:'Технические детали',
+      reviewTitle:'Проверьте данные гостя', reviewSub:'Пожалуйста, проверьте и заполните каждое поле перед добавлением гостя — данные вносятся точно так, как указаны в документе.',
+      sectionStay:'Проживание', sectionAnagrafica:'Личные данные', sectionNascita:'Место рождения и гражданство', sectionDocumento:'Документ, удостоверяющий личность',
+      fDocType:'Тип документа', fSurname:'Фамилия', fGivenNames:'Имя (имена)', fNumber:'Номер документа', fDob:'Дата рождения',
+      fSesso:'Пол', fTipoAlloggiato:'Тип гостя', fDataArrivo:'Дата заезда', fDataPartenza:'Дата выезда',
+      fStatoNascita:'Страна рождения', fComuneNascita:'Место рождения', fProvinciaNascita:'Провинция рождения (код из 2 букв, только для Италии)', fCittadinanza:'Гражданство', fLuogoRilascio:'Место выдачи документа',
+      ocrConfidenceLabel:'Достоверность OCR',
+      confirmAdd:'Добавить гостя в список', backToPhotos:'Вернуться к фото', backToList:'Вернуться к списку гостей',
+      listTitle:'Гости этого бронирования', listEmpty:'Гости ещё не добавлены.', addGuestBtn:'Добавить гостя',
+      showPreview:'Предпросмотр файла JSON', hidePreview:'Скрыть предпросмотр',
+      sendAutoBtn:'Отправить автоматически (Google Sheet)', sending:'Отправка…', sentAutomatically:'Отправлено ✓',
+      sendErrorMsg:'Не удалось автоматически записать в Google Sheet. Попробуйте WhatsApp или скачайте файл ниже.', downloadBtn:'Скачать файл',
+
+      validationTitle:'Пожалуйста, заполните эти поля перед продолжением:', yesterday:'вчера', today:'сегодня', tomorrow:'завтра',
+      disclaimerShort:'Фотографии обрабатываются сторонним сервисом OCR: ваши данные будут обработаны этой третьей стороной, и результат может содержать ошибки. Если вы предпочитаете этого избежать, воспользуйтесь ручным вводом.',
+      disclaimerLinkText:'Подробнее', disclaimerBack:'Вернуться к вводу данных гостя',
+      manualEntryBtn:'Заполнить вручную (без фото и OCR)',
+      downloadedManualMsg:'Файл скачан. Отправьте его удобным способом: WhatsApp, Telegram, email или другим приложением.',
+      disclaimer: {
+        title:'Как обрабатываются ваши данные',
+        paragraphs:[
+          'При использовании автоматического извлечения данных (OCR) сделанные вами фотографии отправляются в Google Cloud Vision, сторонний сервис, для распознавания текста на документе. Google обрабатывает их только для возврата результата и, согласно заявленной политике, не использует их для обучения своих моделей.',
+          'После подтверждения гостя и выбора отправки данных они передаются объекту размещения либо автоматически (записываются напрямую в Google Sheet через API Google Sheets), либо, если вы выберете этот вариант, передаются напрямую через WhatsApp с вашего устройства, либо скачиваются в виде файла для отправки удобным вам способом.',
+          'Автоматическое извлечение — это удобство, а не гарантия: результаты OCR могут содержать ошибки, особенно при повреждённых, бликующих или нестандартно оформленных документах. Каждое поле всегда показывается вам для проверки и должно быть проверено и исправлено перед добавлением гостя — приложение не позволит продолжить, если обязательные поля не заполнены.',
+          'Выбирая автоматическое извлечение через OCR, вы соглашаетесь с тем, что фото документа будет обработано указанным выше сторонним сервисом, и вы несёте ответственность за проверку точности каждого поля перед отправкой. Если вы предпочитаете не использовать эту функцию, вы можете заполнить все поля вручную — в этом случае никакое фото не делается и никуда не отправляется.',
+          'Данные, введённые в этом приложении, хранятся только на вашем устройстве (в локальном хранилище браузера) до тех пор, пока вы не решите их отправить, и удаляются при использовании функции выезда.',
+        ],
+      },
+    },
     info:{ general:'Общая информация', contacts:'Контакты', address:'Адрес', phone:'Телефон', whatsapp:'Чат в WhatsApp', checkin:'15:00 – 22:00', checkout:'До 10:30', wifiConnect:'Подключиться к WiFi' },
     itinerary:{ desc:'Откройте для себя лучшее в городе с этим тщательно спланированным маршрутом.', btn:'Исследовать Милаццо' },
     map:{ title:'Интерактивная карта Милаццо', desc:'Достопримечательности, памятники и скрытые жемчужины.', openMaps:'Открыть в Google Maps' },
     beach:{ desc:'Навигация прямо до ближайшего пляжа — кристально чистые воды Тирренского моря ждут вас.', btnTitle:'Отвези меня на пляж', btnSub:'Открывает Google Maps · Навигация' },
-    room:{ desc:'Позвольте нам проводить вас обратно в MiPA.', btnTitle:'Навигация к MiPA', btnSub:'Открывает Google Maps · Маршрут' },
+    room:{ desc:'Позвольте нам проводить вас обратно в Via Nazionale.', btnTitle:'Навигация к Via Nazionale', btnSub:'Открывает Google Maps · Маршрут' },
     co:{ desc1:'Спасибо, что выбрали нас! Перед отъездом, пожалуйста:', steps:['Оставьте все ключи в номере.','Соберите все личные вещи, включая зарядные устройства и электронику.','Тщательно проверьте номер на наличие забытых вещей.','Урегулируйте все незакрытые платежи, включая туристический налог.'], note:'Если вы что-то забыли, мы предлагаем услугу возврата по почте (взимается дополнительная плата).', desc2:'Когда будете готовы, нажмите кнопку ниже. Спасибо!', btn:'Завершить выезд' },
     events:{ desc:'Мероприятия в Милаццо и окрестностях — регулярно обновляется.', showPast:'Показать прошедшие события', hidePast:'Скрыть прошедшие события', noUpcoming:'На данный момент предстоящих мероприятий нет. Заглядывайте позже!' },
     philosophy:['Принимать гостей, не оставляя следов: с этого начинается всё. В самом сердце Милаццо, где ритм города встречается с морем, мы представили пространство, способное естественно и ненавязчиво вписаться в городскую ткань, предлагая комфортный и аутентичный отдых.','Все наши номера — категории «junior suite» — продуманы до мельчайших деталей: естественный свет, звукоизоляция, эффективные системы, сокращающие расход ресурсов. Просторные, сбалансированные пространства, созданные для подлинного и глубокого комфорта.','Устойчивое развитие — это конкретный выбор, который мы реализуем каждый день с реальной ответственностью. Мы полностью отказались от одноразового пластика и одноразовой бумаги, предлагаем бесплатную питьевую воду и используем исключительно энергию из возобновляемых источников.','Находиться в центре города — значит открывать его аутентично. Мы работаем над тем, чтобы продвигать мягкие виды передвижения, такие как велосипед.','Мы верим в гостеприимство, где ответственность и комфорт сливаются без компромиссов. Мы уже всё продумали: гостю не нужно ничего делать иначе. Он может просто расслабиться и наслаждаться отдыхом, пока мы ненавязчиво действуем, чтобы свести к минимуму наше воздействие.'],
-    dir:{ arriving:'Прибытие', leaving:'Отъезд из Милаццо', arrivalModes:[{icon:'directions_car',color:'#4f7d65',title:'На автомобиле',desc:'Съезжайте с автострады на пункте оплаты Милаццо и следуйте по проспекту Сицилия до последнего выезда. Паркуйтесь на площади XXV Aprile (синие линии — приложение EasyPark).'},{icon:'train',color:'#0284c7',title:'На поезде',desc:'Выйдите на станции Милаццо и сядьте на линии 4 или 5 до остановки у порта.'},{icon:'directions_bus',color:'#d97706',title:'На автобусе',desc:'Из аэропорта Катании или других мест выйдите на остановке у порта — ближайшей к MiPA.'}], departureModes:[{icon:'directions_car',color:'#4f7d65',title:'На автомобиле',desc:'Следуйте по проспекту Сицилия до конца, затем возьмите развязку Милаццо на автостраду A20 в направлении Мессины или Палермо.'},{icon:'directions_bus',color:'#d97706',title:'На автобусе (в Мессину)',desc:'Проверьте расписание GiuntaBus и AST для ежедневных рейсов в Мессину.'},{icon:'train',color:'#0284c7',title:'На поезде',desc:'Возьмите линии 4 или 5 от остановки у порта до железнодорожного вокзала Милаццо.'},{icon:'flight',color:'#7c3aed',title:'Аэропорт Катании',desc:'Прямое сообщение из Милаццо в аэропорт Катании — расписание на остановке у порта.'}] },
+    dir:{ arriving:'Прибытие', leaving:'Отъезд из Сан-Филиппо-дель-Мела', arrivalModes:[{icon:'directions_car',color:'#8a1f1f',title:'На автомобиле',desc:'Съезжайте с автострады A20 на съезде «Milazzo»: объект находится примерно в 1 минуте езды от съезда, по адресу Via Archi Nazionale 16, San Filippo del Mela. Рядом есть бесплатная парковка.'},{icon:'train',color:'#0284c7',title:'На поезде',desc:'Ближайшая станция — Милаццо; оттуда мы рекомендуем такси (около 10 минут) до объекта размещения.'},{icon:'directions_bus',color:'#d97706',title:'На автобусе',desc:'Из аэропорта Катании или других мест выйдите на автовокзале Милаццо и продолжите на такси до Via Archi Nazionale, San Filippo del Mela (около 10 минут).'}], departureModes:[{icon:'directions_car',color:'#8a1f1f',title:'На автомобиле',desc:'От объекта размещения потребуется около 1 минуты, чтобы выехать на автостраду A20 в направлении Мессины (Катания) или Палермо.'},{icon:'directions_bus',color:'#d97706',title:'На автобусе (в Мессину)',desc:'Проверьте расписание GiuntaBus и AST от автовокзала Милаццо для ежедневных рейсов в Мессину.'},{icon:'train',color:'#0284c7',title:'На поезде',desc:'Возьмите такси до станции Милаццо (около 10 минут) для железнодорожных пересадок.'},{icon:'flight',color:'#7c3aed',title:'Аэропорт Катании',desc:'Прямые автобусные рейсы из Милаццо в аэропорт Катании — уточняйте расписание на автовокзале.'}] },
     services:[{emoji:'🚲',title:'Прокат велосипедов',price:'От €10 / день',note:'Исследуйте Милаццо на велосипеде — городские велосипеды и электровелосипеды.',waText:'Здравствуйте, я хотел бы арендовать велосипед.'},{emoji:'🤿',title:'Дайвинг',price:'От €60 / человек',note:'Бронируйте за 24 часа. Кристально чистые воды ждут вас.',waText:'Здравствуйте, я хотел бы забронировать погружение.'},{emoji:'⛵',title:'Тур по Эолийским островам',price:'От €40 / человек',note:'Бронируйте через Navisal или Tarnav.',waText:'Здравствуйте, я хотел бы информацию о туре на Эолийские острова.'},{emoji:'🛥️',title:'Частный тур по Эолийским островам',price:'От €100 / человек',note:'Частная прогулка на лодке. Настраиваемый маршрут.',waText:'Здравствуйте, я хотел бы забронировать частный тур на Эолийские острова.'}]
   }
 };
@@ -522,137 +695,85 @@ const PLACES = {
 function t() { return allT[state.lang] || allT.en; }
 
 // ══════════════════════════════════════════════
-// ALLOGGIATI WEB — validazione
+// Configurazione struttura (per l'export JSON)
 // ══════════════════════════════════════════════
-// Restituisce un array di messaggi di errore (vuoto = ospite valido e pronto per il TXT).
+const STRUCTURE_NAME = 'B&B Via Nazionale'; // <-- personalizza col nome reale della struttura
+const STRUCTURE_CODE = 'DA_COMPLETARE';      // <-- TODO: inserisci il codice struttura Alloggiati Web di Via Nazionale (diverso da quello di MiPA!)
+const STRUCTURE_CIN = 'DA_COMPLETARE'; // <-- TODO: inserisci il CIN (Codice Identificativo Nazionale) di Via Nazionale (diverso da quello di MiPA!)
+
+// ══════════════════════════════════════════════
+// Ospiti — validazione leggera
+// ══════════════════════════════════════════════
+// Qui NON si generano codici né si valida secondo il tracciato Alloggiati Web: i dati
+// vengono acquisiti così come compaiono sul documento ed esportati in JSON grezzo; la
+// conversione nel formato ufficiale avviene in un'altra app. La validazione si limita
+// quindi ai campi minimi perché l'export abbia senso.
 function validateGuest(g) {
   const errors = [];
-  const isPrincipal = ['16', '17', '18'].includes(g.tipoAlloggiato);
   const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
 
-  if (!g.tipoAlloggiato) errors.push('Tipo alloggiato mancante');
-  if (!dateRe.test(g.dataArrivo || '')) errors.push('Data di arrivo non valida (formato gg/mm/aaaa)');
-  const perm = parseInt(g.giorniPermanenza, 10);
-  if (!perm || perm < 1 || perm > 30) errors.push('Giorni di permanenza non validi (1-30)');
-  if (!g.cognome) errors.push('Cognome mancante');
-  if (!g.nome) errors.push('Nome mancante');
-  if (g.sesso !== 'M' && g.sesso !== 'F') errors.push('Sesso non specificato');
-  if (!dateRe.test(g.dataNascita || '')) errors.push('Data di nascita non valida (formato gg/mm/aaaa)');
-  if (!g.codiceStatoNascita) errors.push('Codice stato di nascita mancante (verifica tabella Stati)');
-  if (isItaliaCode(g.codiceStatoNascita)) {
-    if (!g.codiceComuneNascita) errors.push('Codice comune di nascita mancante (verifica tabella Comuni)');
-    if (!g.provinciaNascita) errors.push('Provincia di nascita mancante');
+  // Soggiorno
+  if (!dateRe.test(g.stay.arrivalDate || '')) errors.push('Data di arrivo mancante o non valida');
+  if (!dateRe.test(g.stay.departureDate || '')) errors.push('Data di partenza mancante o non valida');
+  if (g.stay.arrivalDate && g.stay.departureDate && g.stay.arrivalDate === g.stay.departureDate) {
+    errors.push('La data di partenza non può coincidere con quella di arrivo');
   }
-  if (!g.codiceCittadinanza) errors.push('Codice cittadinanza mancante (verifica tabella Stati)');
-  if (isPrincipal) {
-    if (!g.codiceTipoDocumento) errors.push('Codice tipo documento mancante (verifica tabella Documenti)');
-    if (!g.numeroDocumento) errors.push('Numero documento mancante');
-    if (!g.codiceLuogoRilascio) errors.push('Codice luogo di rilascio mancante');
-  }
+  if (!g.stay.guestType) errors.push('Tipo alloggiato mancante');
+
+  // Dati anagrafici
+  if (!g.personal.lastName) errors.push('Cognome mancante');
+  if (!g.personal.firstName) errors.push('Nome mancante');
+  if (g.personal.gender !== 'M' && g.personal.gender !== 'F') errors.push('Sesso mancante');
+  if (!dateRe.test(g.personal.birthDate || '')) errors.push('Data di nascita mancante o non valida');
+
+  // Nascita e cittadinanza — luogo e provincia di nascita si trovano solo sui documenti
+  // italiani (formato "Comune (PR)"): per i documenti esteri non è richiesto inserirli,
+  // quindi non bloccano l'avanzamento se lo Stato di nascita non è l'Italia.
+  if (!g.personal.birthCountry) errors.push('Stato di nascita mancante');
+  if (g.personal.birthCountry === 'ITALIA' && !g.personal.birthPlace) errors.push('Comune di nascita mancante (obbligatorio se nato in Italia)');
+  if (g.personal.birthCountry === 'ITALIA' && !g.personal.birthProvince) errors.push('Provincia di nascita mancante (obbligatoria se nato in Italia)');
+  if (!g.personal.nationality) errors.push('Cittadinanza mancante');
+
+  // Documento
+  if (!g.document.type) errors.push('Tipo documento mancante');
+  if (!g.document.number) errors.push('Numero documento mancante');
+  if (!g.document.issuePlace) errors.push('Luogo di rilascio del documento mancante');
+
   return errors;
 }
 
 // ══════════════════════════════════════════════
-// ALLOGGIATI WEB — generazione TXT (Tracciato Tabella 1, 168 caratteri/riga)
+// Export JSON cumulativo
 // ══════════════════════════════════════════════
-function padRight(value, len) {
-  const s = (value == null ? '' : String(value)).slice(0, len);
-  return s + ' '.repeat(Math.max(0, len - s.length));
+function buildExportJson() {
+  return {
+    version: '1.0',
+    exportDate: new Date().toISOString(),
+    structure: { name: STRUCTURE_NAME, code: STRUCTURE_CODE, cin: STRUCTURE_CIN },
+    guests: state.schedine.map(g => ({
+      id: g.id,
+      document: { ...g.document },
+      personal: { ...g.personal },
+      stay: { ...g.stay },
+    })),
+  };
 }
 
-function formatGuestLine(g) {
-  const isPrincipal = ['16', '17', '18'].includes(g.tipoAlloggiato);
-  const italia = isItaliaCode(g.codiceStatoNascita);
-  const fields = [
-    padRight(g.tipoAlloggiato, 2),                                    // 0-1
-    padRight(g.dataArrivo, 10),                                       // 2-11
-    padRight(g.giorniPermanenza, 2),                                  // 12-13
-    padRight((g.cognome || '').toUpperCase(), 50),                    // 14-63
-    padRight((g.nome || '').toUpperCase(), 30),                       // 64-93
-    padRight(g.sesso === 'F' ? '2' : '1', 1),                         // 94
-    padRight(g.dataNascita, 10),                                      // 95-104
-    padRight(italia ? g.codiceComuneNascita : '', 9),                 // 105-113
-    padRight(italia ? g.provinciaNascita : '', 2),                    // 114-115
-    padRight(g.codiceStatoNascita, 9),                                // 116-124
-    padRight(g.codiceCittadinanza, 9),                                // 125-133
-    padRight(isPrincipal ? g.codiceTipoDocumento : '', 5),            // 134-138
-    padRight(isPrincipal ? g.numeroDocumento : '', 20),               // 139-158
-    padRight(isPrincipal ? g.codiceLuogoRilascio : '', 9),            // 159-167
-  ];
-  const line = fields.join('');
-  if (line.length !== 168) console.warn('Riga Alloggiati Web di lunghezza inattesa:', line.length, g);
-  return line;
-}
-
-function generateAlloggiatiTxt(guests) {
-  return guests.map(formatGuestLine).join('\r\n');
-}
-
-function alloggiatiFilename() {
+function exportFilename() {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return 'alloggiati_' + yyyy + mm + dd + '.txt';
+  return 'export_alloggiati_' + yyyy + mm + dd + '.json';
 }
 
-
-// ══════════════════════════════════════════════
-// ALLOGGIATI WEB — tabelle codici ufficiali
-// ══════════════════════════════════════════════
-// Fonte: "Documento di Descrizione WS_ALLOGGIATI" (Polizia di Stato) e tabelle
-// scaricabili da https://alloggiatiweb.poliziadistato.it/portalealloggiati/tabelle.aspx
-//
-// NOTA IMPORTANTE: le tabelle "Comuni", "Stati" e "Documenti" complete (migliaia di righe,
-// codici ISTAT-like) sono pubblicate SOLO dalla Polizia di Stato e vanno scaricate dal tuo
-// account sul portale — non è corretto inventarle. Qui c'è solo un seed minimo verificato
-// (l'Italia) più un meccanismo di codice manuale per tutto il resto: se il testo digitato
-// non è nel seed, il campo "codice" va compilato a mano dall'operatore consultando la
-// tabella ufficiale scaricata.
-const ALLOGGIATI_STATI_SEED = {
-  'ITALIA': '100000100',
-};
-
-// Codici "Tipo Alloggiato" (ruolo dell'ospite nella schedina). I codici 16, 19 e 20 sono
-// confermati da più fonti; per 17/18 (capofamiglia vs capogruppo) le fonti secondarie non
-// concordano fra loro — verifica il significato esatto sul tuo account Alloggiati Web o
-// nella tabella "Tipi Alloggiato" scaricabile dal portale prima di un uso massivo.
-const ALLOGGIATI_TIPO_OPTIONS = [
-  { code: '16', label: 'Ospite singolo' },
-  { code: '17', label: 'Capofamiglia / capogruppo (verifica sul portale)' },
-  { code: '18', label: 'Capogruppo / capofamiglia — ruolo alternativo (verifica sul portale)' },
-  { code: '19', label: 'Familiare' },
-  { code: '20', label: 'Membro di gruppo' },
-];
-
-// Documenti gestiti: qui mappiamo solo l'ETICHETTA parlata dall'app; il CODICE numerico
-// a 5 cifre della "Tabella Documenti" ufficiale va inserito manualmente dall'operatore
-// (si trova nella tabella scaricabile dal portale) finché non viene importata la tabella completa.
-const ALLOGGIATI_DOCUMENTI = [
-  { key: 'CI', label: "Carta d'identità" },
-  { key: 'CIE', label: "Carta d'identità elettronica" },
-  { key: 'PASS', label: 'Passaporto' },
-  { key: 'PAT', label: 'Patente di guida' },
-  { key: 'PATN', label: 'Patente nautica' },
-  { key: 'PORTO', label: "Porto d'armi" },
-];
-
-function lookupStatoCode(nomeStato) {
-  if (!nomeStato) return '';
-  const key = nomeStato.trim().toUpperCase();
-  return ALLOGGIATI_STATI_SEED[key] || '';
-}
-
-function isItaliaCode(codiceStato) {
-  return codiceStato === ALLOGGIATI_STATI_SEED['ITALIA'];
-}
 
 
 // ── OCR documenti ────────────────────────────
 // La funzione OCR gira come Netlify Function nello stesso sito (netlify/functions/ocr-proxy.mjs),
 // quindi il percorso è relativo: nessun dominio esterno, nessun problema di CORS.
 const OCR_PROXY_URL = '/api/ocr-proxy';
-const OCR_APP_TOKEN = 'CHANGE-ME'; // deve combaciare con la variabile APP_SHARED_TOKEN su Netlify
+const OCR_APP_TOKEN = 'mipa2026xk93'; // deve combaciare con la variabile APP_SHARED_TOKEN su Netlify
 
 // Migliora la leggibilità della foto per l'OCR: scala di grigi + stiramento del contrasto.
 function preprocessImage(dataUrl) {
@@ -717,21 +838,7 @@ async function callVisionOCR(dataUrl) {
   }
   const json = await res.json();
   state.ocrErrorDetail = '';
-  return json.text || '';
-}
-
-let tesseractLoadPromise = null;
-function loadTesseract() {
-  if (window.Tesseract) return Promise.resolve(window.Tesseract);
-  if (tesseractLoadPromise) return tesseractLoadPromise;
-  tesseractLoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-    s.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('Tesseract non disponibile'));
-    s.onerror = () => reject(new Error('Impossibile caricare il modulo OCR'));
-    document.head.appendChild(s);
-  });
-  return tesseractLoadPromise;
+  return { text: json.text || '', confidence: typeof json.confidence === 'number' ? json.confidence : null };
 }
 
 function todayFormatted() {
@@ -739,77 +846,288 @@ function todayFormatted() {
   return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
 }
 
-// Guest "vuoto": tutti i campi richiesti dal tracciato Alloggiati Web (Tabella 1).
+// Un giorno dopo oggi, come default ragionevole per la data di partenza.
+function tomorrowFormatted() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+}
+
+const GUEST_TYPE_OPTIONS = ['OSPITE SINGOLO', 'CAPO FAMIGLIA', 'CAPO GRUPPO', 'FAMILIARE', 'MEMBRO GRUPPO'];
+
+// Elenco ufficiale degli stati (da stati.csv, 236 voci) e dei tipi documento (da
+// documenti.csv, 95 voci): sono le uniche opzioni selezionabili nei relativi menu a
+// tendina, così il testo salvato è sempre un valore ufficiale coerente, mai libero.
+const STATI_LIST = [
+  'AFGHANISTAN', 'ALBANIA', 'ALGERIA', 'ANDORRA',
+  'ANGOLA', 'ANGUILLA (ISOLA)', 'ANTIGUA E BARBUDA', 'APOLIDE',
+  'ARABIA SAUDITA', 'ARGENTINA', 'ARMENIA', 'AUSTRALIA',
+  'AUSTRIA', 'AZERBAIGIAN', 'BAHAMAS', 'BAHREIN',
+  'BANGLADESH', 'BARBADOS', 'BELGIO', 'BELIZE',
+  'BENIN', 'BERMUDE', 'BHUTAN', 'BIELORUSSIA',
+  'BOLIVIA', 'BOPHUTHATSWANA', 'BOSNIA ED ERZEGOVINA', 'BOTSWANA',
+  'BRASILE', 'BRUNEI DARUSSALAM', 'BULGARIA', 'BURKINA FASO',
+  'BURUNDI', 'CAMBOGIA', 'CAMERUN', 'CANADA',
+  'CAPO VERDE', 'CAYMAN (ISOLE)', 'CECOSLOVACCHIA', 'CHRISTMAS',
+  'CIAD', 'CILE', 'CINA', 'CIPRO',
+  'COCOS', 'COLOMBIA', 'COMORE', 'CONGO',
+  'COREA DEL NORD', 'COREA DEL SUD', 'COSTA D\'AVORIO', 'COSTA RICA',
+  'CROAZIA', 'CUBA', 'DANIMARCA', 'DOMINICA',
+  'ECUADOR', 'EGITTO', 'EL SALVADOR', 'EMIRATI ARABI UNITI',
+  'ERITREA', 'ESTONIA', 'ETIOPIA', 'FAER OER',
+  'FEDERAZIONE RUSSA', 'FIGI', 'FILIPPINE', 'FINLANDIA',
+  'FRANCIA', 'GABON', 'GAMBIA', 'GEORGIA',
+  'GEORGIA SUD E ISOLE SANDWICH AUSTRALI', 'GERMANIA', 'GHANA', 'GIAMAICA',
+  'GIAPPONE', 'GIBUTI', 'GIORDANIA', 'GRECIA',
+  'GRENADA', 'GROENLANDIA', 'GUADALUPA', 'GUAM',
+  'GUATEMALA', 'GUAYANA FRANCESE', 'GUERNSEY', 'GUINEA',
+  'GUINEA BISSAU', 'GUINEA EQUATORIALE', 'GUYANA', 'HAITI',
+  'HONDURAS', 'HONG KONG', 'INDIA', 'INDONESIA',
+  'IRAN', 'IRAQ', 'IRLANDA', 'ISLANDA',
+  'ISOLE VERGINI', 'ISRAELE', 'ITALIA', 'KAZAKISTAN',
+  'KENYA', 'KIRGHIZISTAN', 'KIRIBATI', 'KOSOVO',
+  'KUWAIT', 'LA REUNION', 'LAOS', 'LESOTHO',
+  'LETTONIA', 'LIBANO', 'LIBERIA', 'LIBIA',
+  'LIECHTENSTEIN', 'LITUANIA', 'LUSSEMBURGO', 'MACAO',
+  'MACEDONIA', 'MACEDONIA DEL NORD', 'MADAGASCAR', 'MALAWI',
+  'MALAYSIA', 'MALDIVE', 'MALI', 'MALTA',
+  'MALVINE', 'MAN', 'MAROCCO', 'MARSHALL',
+  'MARTINICA', 'MAURITANIA', 'MAURIZIO', 'MAYOTTE',
+  'MESSICO', 'MICRONESIA STATI FEDERALI', 'MOLDAVIA', 'MONACO',
+  'MONGOLIA', 'MONTENEGRO', 'MONTSERRAT', 'MOZAMBICO',
+  'MYANMAR-BIRMANIA', 'NAMIBIA', 'NAURU', 'NEPAL',
+  'NICARAGUA', 'NIGER', 'NIGERIA', 'NORFOLK',
+  'NORVEGIA', 'NUOVA CALEDONIA', 'NUOVA ZELANDA', 'OMAN',
+  'PAESI BASSI', 'PAKISTAN', 'PALAU REPUBBLICA', 'PALESTINA',
+  'PANAMA', 'PAPUASIA-N.GUINEA', 'PARAGUAY', 'PERU\'',
+  'PITCAIRN', 'POLINESIA', 'POLONIA', 'PORTOGALLO',
+  'PUERTO RICO', 'QATAR', 'REGNO UNITO', 'REPUBBLICA CECA',
+  'REPUBBLICA CENTRAFRICANA', 'REPUBBLICA DEMOCRATICA DEL CONGO', 'REPUBBLICA DOMINICANA', 'REPUBBLICA SLOVACCA',
+  'ROMANIA', 'RUANDA', 'S. CHRISTOPHER E NEVIS', 'S. VINCENT E GRENADINE',
+  'SAHARA SPAGNOLO', 'SAINT LUCIA', 'SAINT PIERRE ET MIQUELON', 'SAINT VINCENT E GRENADINE',
+  'SALOMONE', 'SAMOA', 'SAMOA AMERICANE', 'SAN MARINO',
+  'SANT ELENA', 'SAO TOME\' E PRINCIPE', 'SENEGAL', 'SERBIA',
+  'SEYCHELLES', 'SIERRA LEONE', 'SINGAPORE', 'SIRIA',
+  'SLOVENIA', 'SOMALIA', 'SPAGNA', 'SRI LANKA (CEYLON)',
+  'STATI UNITI D\'AMERICA', 'STATO DELLA CITTA\' DEL VATICANO', 'SUD SUDAN', 'SUDAFRICA',
+  'SUDAN', 'SURINAME', 'SVEZIA', 'SVIZZERA',
+  'SWAZILAND', 'TAGIKISTAN', 'TAIWAN', 'TANZANIA',
+  'THAILANDIA', 'TIMOR', 'TOGO', 'TOKELAU',
+  'TONGA', 'TRINIDAD E TOBAGO', 'TUNISIA', 'TURCHIA',
+  'TURKMENISTAN', 'TURKS', 'TUVALU', 'UCRAINA',
+  'UGANDA', 'UNGHERIA', 'URUGUAY', 'UZBEKISTAN',
+  'VANUATU', 'VENEZUELA', 'VERGINI BRITANNICHE (ISOLE)', 'VIETNAM',
+  'WALLIS', 'YEMEN', 'ZAMBIA', 'ZIMBABWE',
+];
+
+const DOCUMENTI_LIST = [
+  'CARTA DI IDENTITA\'', 'CARTA ID. DIPLOMATICA', 'CARTA IDENTITA\' ELETTRONICA',
+  'CERTIFICATO D\'IDENTITA\'', 'PASSAPORTO DI SERVIZIO', 'PASSAPORTO DIPLOMATICO',
+  'PASSAPORTO ORDINARIO', 'PATENTE DI GUIDA', 'PATENTE NAUTICA',
+  'PORTO D\'ARMI GUARDIE GIUR', 'PORTO D\'ARMI USO SPORTIVO', 'PORTO FUCILE DIF. PERSON.',
+  'PORTO FUCILE USO CACCIA', 'PORTO PISTOLA DIF. PERSON', 'TES. ENTE NAZ. ASSIS.VOLO',
+  'TES. FERROV. EX DEPUTATI', 'TES. FERROVIARIA DEPUTATI', 'TES. POSTE E TELECOMUNIC.',
+  'TES. UNICO PER LA CAMERA', 'TES.DOGANALE RIL.MIN.FIN.', 'TESS. AG. E AG.SC. C.F.S.',
+  'TESS. AGENTI/ASS.TI P.P.', 'TESS. AGENTI/ASS.TI P.S.', 'TESS. APP.TO AG.CUSTODIA',
+  'TESS. APP.TO CARABINIERI', 'TESS. APP.TO FINANZIERE', 'TESS. APP.TO/VIG. URBANO',
+  'TESS. APP.TO/VIG. VV.FF.', 'TESS. CONSIGLIO DI STATO', 'TESS. CORTE D\'APPELLO',
+  'TESS. CORTE DEI CONTI', 'TESS. FERROV. SENATO', 'TESS. FUNZIONARI P.S.',
+  'TESS. IDENTIF.TELECOM IT.', 'TESS. ISCR. ALBO MED/CHI.', 'TESS. ISCRIZ. ALBO ODONT.',
+  'TESS. ISPETTORI P.P.', 'TESS. ISPETTORI P.S.', 'TESS. MEMBRO EQUIP. AEREO',
+  'TESS. MILIT. M.M.', 'TESS. MILIT. TRUPPA SISMI', 'TESS. MILITARE E.I.',
+  'TESS. MILITARE NATO', 'TESS. MILITARE TRUPPA A.M', 'TESS. MIN. AFFARI ESTERI',
+  'TESS. MIN.BEN.E ATT.CULT.', 'TESS. MIN.PUBB.ISTRUZIONE', 'TESS. MINIST. TRASP/NAVIG',
+  'TESS. MINISTERO DIFESA', 'TESS. MINISTERO FINANZE', 'TESS. MINISTERO GIUSTIZIA',
+  'TESS. MINISTERO INTERNO', 'TESS. MINISTERO LAVORI PU', 'TESS. MINISTERO SANITA\'',
+  'TESS. MINISTERO TESORO', 'TESS. ORDINE GIORNALISTI', 'TESS. PARLAMENTARI',
+  'TESS. PERS. MAGISTRATI', 'TESS. POL. TRIB. G.D.F.', 'TESS. POLIZIA FEMMINILE',
+  'TESS. PRES.ZA CONS. MIN.', 'TESS. PUBBLICA ISTRUZIONE', 'TESS. S.I.S.D.E.',
+  'TESS. SOTT.LI AG.CUSTODIA', 'TESS. SOTT.LI G.D.F.', 'TESS. SOTT.LI VIG. URBANI',
+  'TESS. SOTTUFF.LI VV.FF.', 'TESS. SOTTUFFICIALI A.M.', 'TESS. SOTTUFFICIALI CC',
+  'TESS. SOTTUFFICIALI E.I.', 'TESS. SOTTUFFICIALI SISMI', 'TESS. SOTTUFICIALI C.F.S.',
+  'TESS. SOTTUFICIALI M.M.', 'TESS. SOVRINTENDENTI P.P.', 'TESS. SOVRINTENDENTI P.S.',
+  'TESS. UFF.LI AG.CUSTODIA', 'TESS. UFF.LI VIG.URBANI', 'TESS. UFFICIALE',
+  'TESS. UFFICIALI A.M.', 'TESS. UFFICIALI C.F.S.', 'TESS. UFFICIALI E.I.',
+  'TESS. UFFICIALI G.D.F.', 'TESS. UFFICIALI M.M.', 'TESS. UFFICIALI P.P.',
+  'TESS. UFFICIALI P.S.', 'TESS. UFFICIALI SISMI', 'TESS. UFFICIALI VV.FF.',
+  'TESS.ISCR. ALBO INGEGNERI', 'TESS.ISCR.ALBO ARCHITETTI', 'TESS.MIN.POLIT.AGRIC.FOR.',
+  'TESSERA DELL\'ORDINE NOTAI', 'TESSERA ISCR. ALBO AVVOC.', 'TESSERA RICONOSC. D.I.A.',
+  'TESSERA U.N.U.C.I.', 'TITOLO VIAGGIO RIF.POLIT.',
+];
+
+// Mappa dei codici MRZ (alpha-3, quelli stampati sulla riga leggibile a macchina dei
+// passaporti/CIE) verso il nome ufficiale nella tabella Stati — verificata a mano contro
+// stati.csv per i paesi più comuni. Per i codici non presenti qui, si usa il confronto
+// testuale generico (findBestMatch) come piano B.
+const MRZ_ALPHA3_TO_STATO = {
+  ITA: 'ITALIA', FRA: 'FRANCIA', DEU: 'GERMANIA', ESP: 'SPAGNA', GBR: 'REGNO UNITO',
+  USA: "STATI UNITI D'AMERICA", CHE: 'SVIZZERA', AUT: 'AUSTRIA', BEL: 'BELGIO',
+  NLD: 'PAESI BASSI', PRT: 'PORTOGALLO', POL: 'POLONIA', ROU: 'ROMANIA',
+  RUS: 'FEDERAZIONE RUSSA', UKR: 'UCRAINA', GRC: 'GRECIA', IRL: 'IRLANDA',
+  SWE: 'SVEZIA', NOR: 'NORVEGIA', DNK: 'DANIMARCA', FIN: 'FINLANDIA',
+  CHN: 'CINA', JPN: 'GIAPPONE', BRA: 'BRASILE', CAN: 'CANADA', AUS: 'AUSTRALIA',
+  MEX: 'MESSICO', ARG: 'ARGENTINA', IND: 'INDIA', MAR: 'MAROCCO', TUN: 'TUNISIA',
+  ALB: 'ALBANIA', HRV: 'CROAZIA', SRB: 'SERBIA', HUN: 'UNGHERIA', BGR: 'BULGARIA',
+  TUR: 'TURCHIA', BLR: 'BIELORUSSIA',
+  // Restanti Stati membri UE/SEE (codici MRZ alpha-3 ICAO) — carte d'identità e
+  // passaporti UE usano tutti lo stesso standard MRZ, quindi bastano i codici corretti
+  // perché il resto del parsing (TD1/TD3) funzioni automaticamente per ogni paese.
+  CYP: 'CIPRO', CZE: 'REPUBBLICA CECA', EST: 'ESTONIA', LVA: 'LETTONIA',
+  LTU: 'LITUANIA', LUX: 'LUSSEMBURGO', MLT: 'MALTA', SVK: 'REPUBBLICA SLOVACCA',
+  SVN: 'SLOVENIA', ISL: 'ISLANDA', LIE: 'LIECHTENSTEIN',
+};
+
+// Titoli con cui le carte d'identità dei paesi UE si presentano (lingua nazionale),
+// usati per riconoscere il tipo di documento nel percorso generico senza MRZ leggibile.
+// Elenco paesi di riferimento: identity-cards.net.
+const EU_ID_CARD_TITLES = [
+  "carte d'identité", 'documento nacional de identidad',
+  'cartão de cidadão', 'personalausweis', 'identiteitskaart', 'dowód osobisty',
+  'személyazonosító igazolvány', 'občanský průkaz', 'občiansky preukaz',
+  'osebna izkaznica', 'asmens tapatybės kortelė', 'personas apliecība',
+  'isikutunnistus', 'karta tożsamości', 'identity card',
+];
+
+// Titoli con cui la patente di guida si presenta nelle varie lingue UE — tutte le patenti
+// UE seguono lo stesso modello (Direttiva 2006/126/CE), quindi il documento fisico è
+// sostanzialmente identico in tutta l'Unione: cambia solo la lingua dell'intestazione.
+const EU_DRIVING_LICENCE_TITLES = [
+  'permis de conduire', 'führerschein', 'rijbewijs', 'körkort', 'kørekort',
+  'ajokortti', 'carta de condução', 'permiso de conducción', 'prawo jazdy',
+  'vezetői engedély', 'řidičský průkaz', 'vodičský preukaz', 'vozniško dovoljenje',
+  'vairuotojo pažymėjimas', 'vadītāja apliecība', 'juhiluba',
+];
+
+
+// Confronto testuale approssimato: toglie accenti/punteggiatura e confronta in maiuscolo.
+function normalizeForMatch(s) {
+  return (s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9 ]/g, '').trim();
+}
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Trova nella lista ufficiale la voce che più somiglia al testo letto dall'OCR: prova prima
+// corrispondenza esatta, poi prefisso/contenuto, infine distanza di Levenshtein entro una
+// soglia ragionevole. Restituisce '' se non trova nulla di abbastanza simile (l'operatore
+// sceglierà a mano dal menu).
+function findBestMatch(text, list) {
+  if (!text) return '';
+  const norm = normalizeForMatch(text);
+  if (!norm) return '';
+  const exact = list.find(item => normalizeForMatch(item) === norm);
+  if (exact) return exact;
+  const starts = list.find(item => {
+    const n = normalizeForMatch(item);
+    return n.startsWith(norm) || norm.startsWith(n);
+  });
+  if (starts) return starts;
+  const includes = list.find(item => {
+    const n = normalizeForMatch(item);
+    return n.includes(norm) || norm.includes(n);
+  });
+  if (includes) return includes;
+  let best = '', bestDist = Infinity;
+  for (const item of list) {
+    const d = levenshtein(norm, normalizeForMatch(item));
+    if (d < bestDist) { bestDist = d; best = item; }
+  }
+  const threshold = Math.max(2, Math.floor(norm.length * 0.35));
+  return bestDist <= threshold ? best : '';
+}
+
+// Stato/nazionalità: prova prima la mappa MRZ (codici alpha-3 come "ITA", "FRA"...),
+// poi il confronto testuale generico (utile per il percorso senza MRZ, dove l'OCR legge
+// direttamente un nome per esteso).
+function matchStato(text) {
+  if (!text) return '';
+  const code = text.trim().toUpperCase();
+  if (MRZ_ALPHA3_TO_STATO[code]) return MRZ_ALPHA3_TO_STATO[code];
+  return findBestMatch(text, STATI_LIST);
+}
+
+function matchDocumento(text) {
+  if (!text) return '';
+  if (DOCUMENTI_LIST.includes(text)) return text;
+  return findBestMatch(text, DOCUMENTI_LIST);
+}
+
+// Guest "vuoto", nella stessa forma annidata dell'export JSON finale: acquisiamo i dati
+// così come compaiono sul documento, senza convertirli in codici — la conversione nel
+// tracciato ufficiale Alloggiati Web avviene in un'altra app.
 function emptyGuestDraft() {
   return {
-    id: 'g' + Date.now() + Math.random().toString(16).slice(2),
-    tipoAlloggiato: '16',
-    dataArrivo: todayFormatted(),
-    giorniPermanenza: '1',
-    cognome: '', nome: '', sesso: '',
-    dataNascita: '',
-    comuneNascitaLabel: '', codiceComuneNascita: '',
-    provinciaNascita: '',
-    statoNascitaLabel: 'ITALIA', codiceStatoNascita: ALLOGGIATI_STATI_SEED['ITALIA'],
-    cittadinanzaLabel: '', codiceCittadinanza: '',
-    tipoDocumentoLabel: '', codiceTipoDocumento: '',
-    numeroDocumento: '',
-    luogoRilascioLabel: '', codiceLuogoRilascio: '',
+    id: 'guest-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    document: { type: '', number: '', issuePlace: '', ocrConfidence: null },
+    personal: { lastName: '', firstName: '', gender: '', birthDate: '', birthPlace: '', birthProvince: '', birthCountry: '', nationality: '' },
+    stay: { arrivalDate: todayFormatted(), departureDate: tomorrowFormatted(), guestType: 'OSPITE SINGOLO' },
   };
 }
 
-// Alpha-3 MRZ -> nome stato (seed minimo; solo ITA è collegato a un codice verificato).
-const MRZ_NATIONALITY_TO_STATO = { ITA: 'ITALIA' };
-
-function mrzDocTypeToKey(docType) {
-  if (!docType) return '';
-  if (docType.includes('Passaporto')) return 'PASS';
-  if (docType.includes("elettronica")) return 'CIE';
-  if (docType.includes("identità")) return 'CI';
-  return '';
+// Traduce il risultato grezzo dell'OCR (extractFieldsFromText) in una bozza di ospite
+// pronta per la revisione manuale — riportando i valori così come letti sul documento,
+// senza alcuna conversione in codice. Solo i campi che l'OCR può davvero leggere vengono
+// precompilati; il resto (arrivo, partenza, luogo nascita se non riconosciuto, ecc.) resta
+// da compilare o verificare a mano.
+// Uniforma qualunque data letta dall'OCR al formato gg/mm/aaaa, indipendentemente dal
+// separatore stampato sul documento originale (i documenti italiani spesso usano i punti:
+// "31.12.2028" anziché "31/12/2028").
+function normalizeDateStr(s) {
+  if (!s) return '';
+  const m = s.trim().match(/^(\d{2})[.\-\/](\d{2})[.\-\/](\d{4})$/);
+  return m ? m[1] + '/' + m[2] + '/' + m[3] : s.trim();
 }
 
-// Traduce il risultato grezzo dell'OCR (extractFieldsFromText) in una bozza di ospite
-// pronta per la revisione manuale. Solo i campi che l'OCR può davvero leggere vengono
-// precompilati; tutto il resto (arrivo, permanenza, luogo nascita/rilascio, codici) resta
-// da compilare o verificare a mano, perché non deducibile in modo affidabile dal documento.
-function ocrResultToGuestDraft(ocrResult) {
+function ocrResultToGuestDraft(ocrResult, confidence) {
   const draft = emptyGuestDraft();
-  draft.cognome = (ocrResult.surname || '').trim();
-  draft.nome = (ocrResult.givenNames || '').trim();
-  draft.dataNascita = ocrResult.dob || '';
-  draft.numeroDocumento = ocrResult.number || '';
-  draft.sesso = ocrResult.sex || '';
-
-  const docKey = mrzDocTypeToKey(ocrResult.docType);
-  const docEntry = ALLOGGIATI_DOCUMENTI.find(d => d.key === docKey);
-  if (docEntry) draft.tipoDocumentoLabel = docEntry.label;
-
-  const statoNome = MRZ_NATIONALITY_TO_STATO[ocrResult.nationality] || '';
-  if (statoNome) {
-    draft.cittadinanzaLabel = statoNome;
-    draft.codiceCittadinanza = lookupStatoCode(statoNome);
-    // Il paese di nascita spesso coincide con la cittadinanza dichiarata sul documento,
-    // ma NON è garantito: lo usiamo solo come suggerimento da verificare, non come dato certo.
-    draft.statoNascitaLabel = statoNome;
-    draft.codiceStatoNascita = lookupStatoCode(statoNome);
+  draft.personal.lastName = (ocrResult.surname || '').trim();
+  draft.personal.firstName = (ocrResult.givenNames || '').trim();
+  draft.personal.birthDate = normalizeDateStr(ocrResult.dob);
+  draft.personal.gender = ocrResult.sex || '';
+  // Cittadinanza/stato di nascita: l'OCR può leggere un codice MRZ a 3 lettere ("ITA")
+  // o un nome per esteso — in entrambi i casi cerchiamo la voce più vicina nella tabella
+  // ufficiale Stati, così il menu a tendina si preseleziona da solo; l'operatore corregge
+  // se il risultato non è quello giusto.
+  draft.personal.nationality = matchStato(ocrResult.nationality);
+  if (ocrResult.comuneNascita) {
+    draft.personal.birthPlace = ocrResult.comuneNascita;
+    draft.personal.birthProvince = ocrResult.provinciaNascita || '';
+    draft.personal.birthCountry = 'ITALIA'; // il formato "Comune (PR)" compare solo su documenti italiani
+  } else if (ocrResult.nationality) {
+    // Nessun indizio di nascita in Italia: come suggerimento di partenza usiamo la stessa
+    // corrispondenza della cittadinanza (spesso coincidono, ma l'operatore verifica sempre).
+    draft.personal.birthCountry = matchStato(ocrResult.nationality);
   }
+
+  draft.document.type = matchDocumento(ocrResult.docType);
+  draft.document.number = ocrResult.number || '';
+  if (ocrResult.luogoRilascio) draft.document.issuePlace = ocrResult.luogoRilascio;
+  if (typeof confidence === 'number') draft.document.ocrConfidence = Math.round(confidence * 100) / 100;
+
   return draft;
 }
 
-function updateGuestField(key, value) {
-  if (!state.ocrFields) state.ocrFields = emptyGuestDraft();
-  state.ocrFields[key] = value; // niente render(): evita di perdere il focus mentre si digita
+// Imposta un valore in un campo annidato (es. "document.number", "personal.lastName")
+// senza mai chiamare render(): evita di perdere il focus/cursore mentre si digita.
+function setNestedField(obj, path, value) {
+  const [group, key] = path.split('.');
+  if (!obj[group]) obj[group] = {};
+  obj[group][key] = value;
 }
 
-// Quando l'operatore digita/seleziona uno stato (nascita o cittadinanza), prova ad
-// agganciare il codice dal seed; se non trovato resta vuoto e va inserito a mano.
-function updateGuestStato(field, label) {
+function updateGuestField(path, value) {
   if (!state.ocrFields) state.ocrFields = emptyGuestDraft();
-  const codeField = field === 'statoNascitaLabel' ? 'codiceStatoNascita' : 'codiceCittadinanza';
-  state.ocrFields[field] = label;
-  const code = lookupStatoCode(label);
-  if (code) state.ocrFields[codeField] = code;
+  setNestedField(state.ocrFields, path, value);
 }
 
 // Converte una data MRZ 'YYMMDD' in 'DD/MM/YYYY' (euristica sul secolo: >30 -> 1900+, altrimenti 2000+)
@@ -839,7 +1157,7 @@ function parseTD3(line1, line2) {
   const dob = formatMrzDate(line2.substr(13, 6));
   const sex = line2.substr(20, 1) === 'F' ? 'F' : (line2.substr(20, 1) === 'M' ? 'M' : '');
   const expiry = formatMrzDate(line2.substr(21, 6));
-  return { docType: 'Passaporto / Passport', country, surname, givenNames, number, nationality, sex, dob, expiry };
+  return { docType: 'PASSAPORTO ORDINARIO', country, surname, givenNames, number, nationality, sex, dob, expiry };
 }
 
 // Carta d'identità elettronica (TD1): tre righe da 30 caratteri
@@ -851,30 +1169,158 @@ function parseTD1(line1, line2, line3) {
   const expiry = formatMrzDate(line2.substr(8, 6));
   const nationality = line2.substr(15, 3).replace(/</g, '');
   const { surname, givenNames } = splitMrzNames(line3);
-  return { docType: "Carta d'identità / ID card", country, surname, givenNames, number, nationality, sex, dob, expiry };
+  return { docType: "CARTA IDENTITA' ELETTRONICA", country, surname, givenNames, number, nationality, sex, dob, expiry };
 }
 
 // Fallback generico: cerca etichette note (multi-lingua) riga per riga nel testo OCR grezzo.
-function genericExtract(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const find = (labels) => {
-    for (const line of lines) {
-      for (const label of labels) {
-        const m = line.match(new RegExp(label + '\\s*[:\\-]?\\s*(.{2,40})', 'i'));
-        if (m && m[1]) return m[1].trim();
+// Parole che indicano che il testo "catturato" è in realtà un'altra etichetta stampata
+// sul documento (es. intestazioni bilingue "Cognome/Surname"), non il dato vero e proprio.
+const GENERIC_LABEL_WORDS = [
+  'cognome', 'surname', 'nom', 'nome', 'name', 'given', 'prénom', 'first',
+  'data', 'date', 'nascita', 'birth', 'naissance', 'nazionalit', 'nationality',
+  'documento', 'document', 'numero', 'number', 'scadenza', 'expiry', 'sesso', 'sex',
+  'luogo', 'place', 'rilascio', 'issue', 'residenza', 'residence',
+  'comune', 'municipality', 'emissione', 'issuing',
+  // Altre lingue UE (etichette che possono comparire sui documenti di altri Stati membri)
+  'achternaam', 'voornaam', 'geboorte', 'geboortedatum', 'nationaliteit',
+  'apelido', 'nascimento', 'nacionalidade', 'apellido', 'nacimiento', 'nacionalidad',
+  'nachname', 'vorname', 'geburtsdatum', 'staatsangehörigkeit', 'geburtsort',
+  'nazwisko', 'imię', 'urodzenia', 'obywatelstwo',
+  'efternamn', 'förnamn', 'födelsedatum', 'medborgarskap',
+  'efternavn', 'fornavn', 'fødselsdato', 'statsborgerskab',
+  'sukunimi', 'etunimi', 'syntymäaika', 'kansalaisuus',
+  'příjmení', 'jméno', 'narození', 'státní příslušnost',
+  'priezvisko', 'meno', 'narodenia', 'štátna príslušnosť',
+  'priimek', 'ime', 'rojstva', 'državljanstvo',
+  'pavardė', 'vardas', 'gimimo', 'pilietybė',
+  'uzvārds', 'vārds', 'dzimšanas', 'pilsonība',
+  'perekonnanimi', 'eesnimi', 'sünniaeg', 'kodakondsus',
+  'vezetéknév', 'keresztnév', 'születési', 'állampolgárság',
+];
+
+function looksLikeAnotherLabel(str) {
+  const low = str.toLowerCase();
+  return GENERIC_LABEL_WORDS.some(w => low.includes(w));
+}
+
+// Cerca un'etichetta (con confini di parola, per evitare falsi positivi tipo "nome"
+// dentro "cognome") e restituisce il valore associato: prima prova sulla stessa riga,
+// altrimenti sulla riga successiva (utile quando etichetta e valore sono su righe diverse,
+// come "LUOGO E DATA DI NASCITA" seguito, sulla riga sotto, dal vero valore).
+function findLabelValue(lines, labels) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    for (const label of labels) {
+      const hasLabel = new RegExp('\\b' + label + '\\b', 'i').test(line);
+      if (!hasLabel) continue;
+      const sameLine = line.match(new RegExp('\\b' + label + '\\b\\s*[:\\-/]?\\s*(.{2,40})$', 'i'));
+      if (sameLine && sameLine[1] && !looksLikeAnotherLabel(sameLine[1])) {
+        return sameLine[1].trim();
+      }
+      // L'etichetta è presente ma sulla stessa riga non c'è un valore utilizzabile
+      // (riga finita, o quel che segue è un'altra etichetta): prova la riga successiva.
+      if (lines[i + 1] && !looksLikeAnotherLabel(lines[i + 1])) {
+        return lines[i + 1].trim();
       }
     }
-    return '';
+  }
+  return '';
+}
+
+// Riconosce il formato tipico delle carte d'identità italiane:
+// "COMUNE (PR) gg.mm.aaaa" oppure "gg/mm/aaaa". Lavora riga per riga (non sull'intero
+// testo) per evitare che lo spazio bianco della regex "ingoi" righe precedenti non
+// correlate attraverso gli a-capo.
+function extractItalianBirthLine(lines) {
+  for (const line of lines) {
+    const m = line.match(/([A-ZÀ-Ú][A-ZÀ-Ú'\s]{1,30}?)\s*\(\s*([A-Z]{2})\s*\)\s*(\d{2})[.\/](\d{2})[.\/](\d{4})/i);
+    if (m) return { comune: m[1].trim(), provincia: m[2].toUpperCase(), dob: m[3] + '/' + m[4] + '/' + m[5] };
+  }
+  return null;
+}
+
+// Il sesso spesso condivide la riga/colonna con un'altra informazione (es. "SESSO STATURA"
+// seguito da "M 180" = sesso + altezza): cerchiamo un token isolato M/F entro poche righe
+// dopo l'etichetta, invece di fidarci ciecamente di quel che segue sulla stessa riga.
+function extractSesso(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    if (/\bsesso\b|\bsex\b/i.test(lines[i])) {
+      for (let j = i; j < Math.min(i + 4, lines.length); j++) {
+        const m = lines[j].match(/\b([MF])\b/);
+        if (m) return m[1].toUpperCase();
+      }
+    }
+  }
+  return '';
+}
+
+// Riconosce il tipo di documento dal testo libero (percorso generico, senza MRZ) e
+// restituisce direttamente l'etichetta ufficiale della tabella Documenti.
+function detectDocType(text) {
+  const low = text.toLowerCase();
+  if (low.includes('patente nautica')) return 'PATENTE NAUTICA';
+  if (low.includes('patente') || low.includes('driving licence') || low.includes('driver')) return 'PATENTE DI GUIDA';
+  // Patente UE straniera: stesso modello della patente italiana (Direttiva 2006/126/CE),
+  // cambia solo la lingua dell'intestazione stampata sul documento.
+  if (EU_DRIVING_LICENCE_TITLES.some(title => low.includes(title))) return 'PATENTE DI GUIDA';
+  if (low.includes('porto d\'armi') || low.includes('porto darmi')) return "PORTO D'ARMI GUARDIE GIUR";
+  if (low.includes('passaporto') || low.includes('passport') || low.includes('reisepass') || low.includes('passeport') || low.includes('pasaporte')) return 'PASSAPORTO ORDINARIO';
+  if (low.includes('elettronica') && (low.includes('identit') || low.includes('identity'))) return "CARTA IDENTITA' ELETTRONICA";
+  if (low.includes('identit') || low.includes('identity card')) return "CARTA DI IDENTITA'";
+  // Carta d'identità di un altro paese UE: riconosciuta dal titolo nella lingua nazionale.
+  if (EU_ID_CARD_TITLES.some(title => low.includes(title))) return "CARTA DI IDENTITA'";
+  return '';
+}
+
+function genericExtract(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const find = (labels) => findLabelValue(lines, labels);
+
+  const result = {
+    docType: detectDocType(text),
+    surname: find([
+      'cognome', 'surname', 'nom', 'apellido', 'nachname', 'achternaam', 'apelido',
+      'nazwisko', 'efternamn', 'efternavn', 'sukunimi', 'příjmení', 'priezvisko',
+      'priimek', 'pavardė', 'uzvārds', 'perekonnanimi', 'vezetéknév',
+    ]),
+    givenNames: find([
+      'nome', 'given name', 'prénom', 'first name', 'nombre', 'vorname', 'voornaam',
+      'nome próprio', 'imię', 'förnamn', 'fornavn', 'etunimi', 'jméno', 'meno',
+      'ime', 'vardas', 'vārds', 'eesnimi', 'keresztnév',
+    ]),
+    number: find(['numero documento', 'n\\.?\\s*documento', 'document no', 'passport no', 'n°', 'nr dokumentu', 'numer dokumentu']),
+    nationality: find([
+      'nazionalit[aà]', 'nationality', 'nacionalidad', 'staatsangehörigkeit', 'nationaliteit',
+      'nacionalidade', 'obywatelstwo', 'medborgarskap', 'statsborgerskab', 'kansalaisuus',
+      'státní příslušnost', 'štátna príslušnosť', 'državljanstvo', 'pilietybė',
+      'pilsonība', 'kodakondsus', 'állampolgárság',
+    ]),
+    dob: find([
+      'data di nascita', 'date of birth', 'geburtsdatum', 'fecha de nacimiento',
+      'geboortedatum', 'data de nascimento', 'data urodzenia', 'födelsedatum',
+      'fødselsdato', 'syntymäaika', 'datum narození', 'dátum narodenia',
+      'datum rojstva', 'gimimo data', 'dzimšanas dat', 'sünniaeg', 'születési idő',
+    ]),
+    // Sulla carta d'identità italiana "COMUNE DI / MUNICIPALITY" indica il comune che ha
+    // rilasciato il documento — è il nome del luogo di rilascio (il codice numerico resta
+    // comunque da inserire a mano, serve la tabella ufficiale).
+    luogoRilascio: find(['comune di', 'municipality']),
+    comuneNascita: '', provinciaNascita: '',
   };
-  return {
-    docType: '',
-    surname: find(['cognome', 'surname', 'nom']),
-    givenNames: find(['nome', 'given name', 'prénom', 'first name']),
-    number: find(['numero documento', 'n\\.?\\s*documento', 'document no', 'passport no', 'n°']),
-    nationality: find(['nazionalit[aà]', 'nationality']),
-    dob: find(['data di nascita', 'date of birth', 'geburtsdatum']),
-    expiry: find(['scadenza', 'date of expiry', 'expiry']),
-  };
+
+  result.sex = extractSesso(lines);
+
+  // Formato italiano "Comune (PR) gg.mm.aaaa": se trovato, ha priorità perché più affidabile
+  // della ricerca per etichette separate (e ci dà anche comune/provincia, che altrimenti
+  // resterebbero sempre da inserire a mano).
+  const birthLine = extractItalianBirthLine(lines);
+  if (birthLine) {
+    result.comuneNascita = birthLine.comune;
+    result.provinciaNascita = birthLine.provincia;
+    result.dob = birthLine.dob;
+  }
+
+  return result;
 }
 
 // Individua e interpreta la MRZ nel testo OCR; se non trovata, usa l'estrazione generica.
@@ -899,7 +1345,7 @@ function extractFieldsFromText(text) {
     }
   }
 
-  const emptyRaw = { docType: '', surname: '', givenNames: '', number: '', nationality: '', sex: '', dob: '', expiry: '' };
+  const emptyRaw = { docType: '', surname: '', givenNames: '', number: '', nationality: '', sex: '', dob: '', comuneNascita: '', provinciaNascita: '', luogoRilascio: '' };
   return { ...emptyRaw, ...genericExtract(text) };
 }
 
@@ -909,81 +1355,68 @@ async function runOCR() {
   render();
 
   let combinedText = '';
-  let usedFallback = false;
+  const confidences = [];
 
   try {
-    // ── Motore primario: Google Cloud Vision (via proxy) ──
+    // ── Google Cloud Vision (via proxy) — unico motore OCR ──
     for (const img of state.images) {
       const pre = await preprocessImage(img);
-      const text = await callVisionOCR(pre);
+      const { text, confidence } = await callVisionOCR(pre);
       combinedText += '\n' + text;
+      if (typeof confidence === 'number') confidences.push(confidence);
     }
   } catch (err) {
-    console.warn('Vision OCR non disponibile, passo a Tesseract offline:', err);
-    usedFallback = true;
+    console.warn('Vision OCR non disponibile:', err);
+    state.ocrError = 'vision_failed';
     combinedText = '';
-    try {
-      // ── Fallback offline: Tesseract.js (nessuna connessione richiesta) ──
-      const Tesseract = await loadTesseract();
-      for (const img of state.images) {
-        const pre = await preprocessImage(img);
-        const { data } = await Tesseract.recognize(pre, 'eng');
-        combinedText += '\n' + (data && data.text ? data.text : '');
-      }
-    } catch (err2) {
-      console.warn('Anche Tesseract ha fallito:', err2);
-      state.ocrError = 'both';
-    }
   }
 
+  const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : null;
+
   state.ocrRaw = combinedText;
-  state.ocrFields = ocrResultToGuestDraft(extractFieldsFromText(combinedText));
-  if (usedFallback && !state.ocrError) state.ocrError = 'fallback';
+  state.ocrFields = ocrResultToGuestDraft(extractFieldsFromText(combinedText), avgConfidence);
   state.docPhase = 'review';
   render();
 }
 
 // Aggiunge l'ospite in revisione alla lista della pratica corrente (persistita in localStorage)
-// e torna alla schermata di acquisizione per un eventuale ospite successivo.
+// e torna alla schermata di acquisizione per un eventuale ospite successivo. A differenza di
+// prima, qui non si può più "procedere comunque": se l'OCR non ha letto un campo (per
+// qualsiasi motivo — non solo Vision irraggiungibile, anche un singolo dato illeggibile),
+// l'operatore deve completarlo a mano prima di poter aggiungere l'ospite.
 function addGuestToList() {
   const draft = state.ocrFields || emptyGuestDraft();
   const errors = validateGuest(draft);
   if (errors.length) {
-    const proceed = confirm(
-      (t().upload.validationTitle || 'Controlla questi campi:') + '\n\n- ' + errors.join('\n- ') +
-      '\n\n' + (t().upload.validationProceed || "Vuoi aggiungerlo comunque? Potrai correggerlo più tardi dalla lista, ma il file non sarà completo finché non lo fai.")
-    );
-    if (!proceed) return;
+    alert((t().upload.validationTitle || 'Completa questi campi prima di continuare:') + '\n\n- ' + errors.join('\n- '));
+    return;
   }
-  draft._incomplete = errors.length > 0;
   state.schedine.push(draft);
-  localStorage.setItem('mipa_schedine', JSON.stringify(state.schedine));
+  localStorage.setItem('vianaz_schedine', JSON.stringify(state.schedine));
   state.ocrFields = null;
   state.images = [];
-  localStorage.setItem('mipa_images', JSON.stringify(state.images));
+  localStorage.setItem('vianaz_images', JSON.stringify(state.images));
   state.docPhase = 'list';
   render();
 }
 
 function removeGuestFromList(id) {
   state.schedine = state.schedine.filter(g => g.id !== id);
-  localStorage.setItem('mipa_schedine', JSON.stringify(state.schedine));
+  localStorage.setItem('vianaz_schedine', JSON.stringify(state.schedine));
   render();
 }
 
 function editGuestFromList(id) {
   const guest = state.schedine.find(g => g.id === id);
   if (!guest) return;
-  state.ocrFields = { ...guest };
+  state.ocrFields = JSON.parse(JSON.stringify(guest)); // copia profonda: niente riferimenti condivisi
   state.schedine = state.schedine.filter(g => g.id !== id);
-  localStorage.setItem('mipa_schedine', JSON.stringify(state.schedine));
+  localStorage.setItem('vianaz_schedine', JSON.stringify(state.schedine));
   state.docPhase = 'review';
   render();
 }
 
-// Genera il TXT cumulativo e lo condivide su WhatsApp come allegato (Web Share API),
-// con fallback al download manuale se il browser non supporta la condivisione di file.
-function downloadTxtFile(file, filename) {
+function downloadExportFile(file, filename) {
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -991,80 +1424,57 @@ function downloadTxtFile(file, filename) {
   URL.revokeObjectURL(url);
 }
 
-function buildAlloggiatiFile() {
-  const content = generateAlloggiatiTxt(state.schedine);
-  const filename = alloggiatiFilename();
-  return { file: new File([content], filename, { type: 'text/plain' }), filename };
+function buildExportFile() {
+  const content = JSON.stringify(buildExportJson(), null, 2);
+  const filename = exportFilename();
+  return { file: new File([content], filename, { type: 'application/json' }), filename };
 }
 
-function warnIfIncomplete() {
-  const incomplete = state.schedine.filter(g => g._incomplete).length;
-  if (!incomplete) return true;
-  return confirm(
-    (t().upload.incompleteWarning || '{n} ospite/i hanno dati incompleti.').replace('{n}', incomplete) +
-    '\n' + (t().upload.validationProceed || 'Vuoi procedere comunque?')
-  );
-}
+// Invio automatico via Google Sheets: nessun download, nessun cambio app — i dati vengono
+// scritti da un backend (Netlify Function + Google Sheets API) direttamente nel foglio
+// condiviso, riga per riga, pronti per essere letti dall'altra app.
+const SEND_PROXY_URL = '/api/append-guest-sheet';
 
-// Invia il TXT su WhatsApp: prova prima la condivisione nativa (Web Share API, l'ospite
-// sceglie WhatsApp e il file arriva come allegato); se il browser non la supporta
-// (tipicamente su desktop), scarica il file e apre wa.me perché l'operatore lo alleghi a mano.
-async function sendViaWhatsApp() {
+async function sendAutomatically() {
   if (!state.schedine.length) return;
-  if (!warnIfIncomplete()) return;
-  const { file, filename } = buildAlloggiatiFile();
-  const shareText = (t().upload && t().upload.txtShareMsg) || 'Schedine alloggiati MiPA';
+  state.sendStatus = 'sending';
+  state.sendErrorDetail = '';
+  render();
 
-  if (navigator.share && navigator.canShare) {
-    try {
-      const shareData = { files: [file], text: shareText, title: filename };
-      if (navigator.canShare(shareData)) {
-        await navigator.share(shareData);
-        state.docsSent = true;
-        localStorage.setItem('mipa_docssent', 'true');
-        render();
-        return;
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') return; // utente ha chiuso il dialog
-      console.warn('Share API error:', err.name, err.message);
+  try {
+    const res = await fetch(SEND_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Token': OCR_APP_TOKEN },
+      body: JSON.stringify({ exportData: buildExportJson() }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error('HTTP ' + res.status + (detail ? ' — ' + detail.slice(0, 300) : ''));
     }
+    state.sendStatus = 'sent';
+    state.docsSent = true;
+    localStorage.setItem('vianaz_docssent', 'true');
+  } catch (err) {
+    console.warn('Invio automatico fallito:', err);
+    state.sendStatus = 'error';
+    state.sendErrorDetail = err.message || String(err);
   }
-
-  // Fallback: scarica il file e apre WhatsApp Web/app con un messaggio pronto;
-  // l'allegato va aggiunto a mano (limite del browser, non aggirabile senza un backend
-  // con WhatsApp Business API — vedi la conversazione precedente per i dettagli).
-  downloadTxtFile(file, filename);
-  window.open('https://wa.me/393339201524?text=' + encodeURIComponent(shareText), '_blank');
-  alert(t().upload.txtDownloadedNoteWa || 'Il file è stato scaricato: allegalo manualmente nella chat WhatsApp che si è aperta.');
-  state.docsSent = true;
-  localStorage.setItem('mipa_docssent', 'true');
   render();
 }
 
-// Invia il TXT via email: nessun mailto: può allegare file per limiti del browser, quindi
-// scarica il file e apre il client di posta con oggetto/corpo pronti; l'allegato va
-// aggiunto a mano (per un invio automatico servirebbe un backend dedicato — se ti serve,
-// possiamo aggiungerlo in un secondo momento).
-function sendViaEmail() {
+// Riserva manuale: scarica semplicemente il file, senza tentare alcun invio.
+function downloadOnly() {
   if (!state.schedine.length) return;
-  if (!warnIfIncomplete()) return;
-  const { file, filename } = buildAlloggiatiFile();
-  downloadTxtFile(file, filename);
-  const subject = 'MiPA — Schedine Alloggiati ' + filename;
-  const body = (t().upload && t().upload.txtShareMsg) || 'Schedine alloggiati MiPA';
-  window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-  alert(t().upload.txtDownloadedNoteEmail || 'Il file è stato scaricato: allegalo manualmente nella email che si è aperta.');
-  state.docsSent = true;
-  localStorage.setItem('mipa_docssent', 'true');
-  render();
+  const { file, filename } = buildExportFile();
+  downloadExportFile(file, filename);
+  alert(t().upload.downloadedManualMsg || 'File scaricato. Invialo con lo strumento che preferisci: WhatsApp, Telegram, email o un altro ancora.');
 }
 
 function menuItems() {
   const tabs = t().tabs;
   return [
     { id:'schedine',     icon:'badge',        color:'#334155', label:tabs.schedine,    sub: t().upload ? t().upload.title : '', external:true },
-    { id:'info',         icon:'home',         color:'#4f7d65', label:tabs.info,        sub: t().info ? t().info.general : '' },
+    { id:'info',         icon:'home',         color:'#8a1f1f', label:tabs.info,        sub: t().info ? t().info.general : '' },
     { id:'philosophy',   icon:'eco',          color:'#3d8c5e', label:tabs.philosophy,  sub:'Eco-friendly & sustainable' },
     { id:'directions',   icon:'navigation',   color:'#0284c7', label:tabs.directions,  sub:'How to arrive & depart' },
     { id:'map',          icon:'map',          color:'#7c3aed', label:tabs.map,         sub:'Interactive map of Milazzo' },
@@ -1074,7 +1484,7 @@ function menuItems() {
     { id:'museums',      icon:'museum',       color:'#b45309', label:tabs.museums,     sub:'Culture & history of Milazzo' },
     { id:'beach',        icon:'beach_access', color:'#0369a1', label:tabs.beach,       sub:'Crystal clear waters await' },
     { id:'recipes',      icon:'restaurant_menu', color:'#c2410c', label:tabs.recipes,     sub:'10 no-cook recipes' },
-    { id:'roomGuide',    icon:'king_bed',     color:'#9333ea', label:tabs.roomGuide,   sub:'Navigate back to MiPA' },
+    { id:'roomGuide',    icon:'king_bed',     color:'#9333ea', label:tabs.roomGuide,   sub:'Navigate back to Via Nazionale' },
     { id:'checkout',     icon:'logout',       color:'#dc2626', label:tabs.checkout,    sub:'Instructions for departure' },
   ];
 }
@@ -1140,7 +1550,7 @@ function langSelect() {
     h('option', { value:'ru' }, '🇷🇺 Русский'),
   );
   sel.value = state.lang;
-  sel.addEventListener('change', e => { state.lang = e.target.value; localStorage.setItem('mipa_lang', state.lang); render(); });
+  sel.addEventListener('change', e => { state.lang = e.target.value; localStorage.setItem('vianaz_lang', state.lang); render(); });
   return sel;
 }
 
@@ -1148,14 +1558,14 @@ function langSelect() {
 function navigate(page, section) {
   state.page = page;
   if (section) state.section = section;
-  localStorage.setItem('mipa_page', page);
+  localStorage.setItem('vianaz_page', page);
   window.scrollTo(0, 0);
   render();
 }
 
 // ── Actions ──────────────────────────────────
 function connectWifi() {
-  const ssid = 'MiPA_guests', pwd = 'viaS.Giovanni/42';
+  const ssid = 'B&B Via Nazionale', pwd = 'BBViaNazionale!16';
   window.location.href = 'wifi:S:' + ssid + ';T:WPA;P:' + pwd + ';;';
   if (navigator.clipboard) navigator.clipboard.writeText('SSID: ' + ssid + '\nPassword: ' + pwd);
 }
@@ -1191,7 +1601,7 @@ function onFiles(files) {
     const reader = new FileReader();
     reader.onload = ev => {
       state.images.push(ev.target.result);
-      localStorage.setItem('mipa_images', JSON.stringify(state.images));
+      localStorage.setItem('vianaz_images', JSON.stringify(state.images));
       render();
     };
     reader.readAsDataURL(f);
@@ -1200,7 +1610,7 @@ function onFiles(files) {
 
 function removeImage(i) {
   state.images.splice(i, 1);
-  localStorage.setItem('mipa_images', JSON.stringify(state.images));
+  localStorage.setItem('vianaz_images', JSON.stringify(state.images));
   if (state.images.length === 0) { state.docPhase = 'capture'; state.ocrFields = null; }
   render();
 }
@@ -1230,8 +1640,8 @@ function renderSidebar() {
   const items = menuItems();
   return h('aside', { className: 'sidebar' },
     h('div', { className: 'sidebar-header' },
-      h('div', { className: 'sidebar-logo' }, 'MiPA'),
-      h('div', { className: 'sidebar-sub' }, 'Guest Companion · Milazzo'),
+      h('div', { className: 'sidebar-logo' }, 'Via Nazionale'),
+      h('div', { className: 'sidebar-sub' }, 'Guest Companion · San Filippo del Mela'),
       h('div', { className: 'sidebar-lang' }, langSelect()),
     ),
     h('nav', { className: 'sidebar-nav' },
@@ -1246,7 +1656,7 @@ function renderSidebar() {
         return btn;
       })
     ),
-    h('div', { className: 'sidebar-footer' }, 'MiPA · Via San Giovanni 42, Milazzo'),
+    h('div', { className: 'sidebar-footer' }, 'Via Nazionale · Via Archi Nazionale 16, San Filippo del Mela (ME)'),
   );
 }
 
@@ -1257,8 +1667,8 @@ function renderHome() {
     h('div', { className: 'toolbar toolbar-home' },
       h('div', { className: 'toolbar-row' },
         h('div', {},
-          h('div', { className: 'toolbar-title' }, 'MiPA'),
-          h('div', { className: 'toolbar-subtitle' }, 'Guest Companion · Milazzo'),
+          h('div', { className: 'toolbar-title' }, 'Via Nazionale'),
+          h('div', { className: 'toolbar-subtitle' }, 'Guest Companion · San Filippo del Mela'),
         ),
         langSelect(),
       )
@@ -1268,7 +1678,7 @@ function renderHome() {
       h('div', { className: 'home-sub' }, tr.home.sub),
       h('div', { className: 'checkin-card' },
         h('button', { className: 'checkin-option', onClick: openSchedineFlow },
-          h('div', { className: 'checkin-icon', style: { background: '#4f7d65' } }, ms('upload_file')),
+          h('div', { className: 'checkin-icon', style: { background: '#8a1f1f' } }, ms('upload_file')),
           h('div', { className: 'checkin-text' },
             h('div', { className: 'checkin-title' }, tr.home.checkinNew),
             h('div', { className: 'checkin-desc' }, tr.home.checkinNewDesc),
@@ -1315,15 +1725,25 @@ function renderCaptureStep(tr) {
     )
   ) : null;
 
+  const disclaimerNote = h('div', { className: 'disclaimer-note' },
+    h('span', {}, tr.upload.disclaimerShort),
+    h('button', { className: 'disclaimer-link', onClick: openDisclaimer }, tr.upload.disclaimerLinkText),
+  );
+
   const ocrBtn = state.images.length ? h('button', {
     className: 'btn-wa', style: 'border:none;cursor:pointer;width:100%;', onClick: runOCR,
   }, ms('document_scanner'), ' ', tr.upload.ocrButton) : null;
+
+  const manualBtn = h('button', {
+    className: 'btn-secondary', onClick: startManualEntry,
+  }, ms('edit_note'), ' ', tr.upload.manualEntryBtn);
 
   const backToList = state.schedine.length ? h('button', {
     className: 'btn-link', onClick: () => { state.docPhase = 'list'; render(); },
   }, tr.upload.backToList) : null;
 
   return [
+    disclaimerNote,
     h('div', { className: 'upload-drop', onClick: () => fileInput.click() },
       h('span', { className: 'upload-drop-icon' }, '📸'),
       h('div', { className: 'upload-drop-text' }, tr.upload.dropText),
@@ -1332,7 +1752,43 @@ function renderCaptureStep(tr) {
     ),
     previews,
     ocrBtn,
+    manualBtn,
     backToList,
+  ];
+}
+
+// Avvia una schedina vuota da compilare interamente a mano, senza foto né OCR: nessuna
+// immagine viene inviata a Google Vision in questo percorso.
+function startManualEntry() {
+  state.ocrFields = emptyGuestDraft();
+  state.ocrError = null;
+  state.ocrErrorDetail = '';
+  state.docPhase = 'review';
+  render();
+}
+
+// Apre la pagina informativa completa, ricordando da dove si è arrivati per il tasto "indietro".
+function openDisclaimer() {
+  state.disclaimerReturnPhase = state.docPhase;
+  state.docPhase = 'disclaimer';
+  render();
+}
+
+function renderDisclaimerStep(tr) {
+  const d = tr.upload.disclaimer;
+  return [
+    h('h2', { className: 'section-h2' }, d.title),
+    h('div', { className: 'disclaimer-body' },
+      ...d.paragraphs.map(p => h('p', {}, p)),
+    ),
+    h('button', {
+      className: 'btn-wa', style: 'border:none;cursor:pointer;width:100%;',
+      onClick: startManualEntry,
+    }, ms('edit_note'), ' ', tr.upload.manualEntryBtn),
+    h('button', {
+      className: 'btn-link',
+      onClick: () => { state.docPhase = state.disclaimerReturnPhase || 'capture'; render(); },
+    }, tr.upload.disclaimerBack),
   ];
 }
 
@@ -1346,14 +1802,17 @@ function renderProcessingStep(tr) {
 }
 
 // ── Campi del form di revisione ospite ──
-function guestField(tr, key, label, opts) {
+function guestField(tr, path, label, opts) {
   opts = opts || {};
-  const input = h('input', {
+  const [group, key] = path.split('.');
+  const attrs = {
     className: 'field-input', type: opts.type || 'text',
     placeholder: opts.placeholder || '',
-    value: (state.ocrFields && state.ocrFields[key]) || '',
-  });
-  input.addEventListener('input', e => updateGuestField(key, e.target.value));
+    value: (state.ocrFields && state.ocrFields[group] && state.ocrFields[group][key]) || '',
+  };
+  if (opts.list) attrs.list = opts.list;
+  const input = h('input', attrs);
+  input.addEventListener('input', e => updateGuestField(path, e.target.value));
   return h('div', { className: 'field-group' },
     h('label', { className: 'field-label' }, label),
     input,
@@ -1361,63 +1820,85 @@ function guestField(tr, key, label, opts) {
   );
 }
 
-function guestSelect(tr, key, label, options) {
+function guestSelect(tr, path, label, options) {
+  const [group, key] = path.split('.');
   const select = h('select', { className: 'field-input' },
     ...options.map(o => h('option', { value: o.value }, o.label))
   );
-  select.value = (state.ocrFields && state.ocrFields[key]) || '';
-  select.addEventListener('change', e => { updateGuestField(key, e.target.value); render(); });
+  select.value = (state.ocrFields && state.ocrFields[group] && state.ocrFields[group][key]) || '';
+  select.addEventListener('change', e => { updateGuestField(path, e.target.value); render(); });
   return h('div', { className: 'field-group' },
     h('label', { className: 'field-label' }, label),
     select,
   );
 }
 
-// Campo Stato (nascita o cittadinanza): input testuale + tentativo di aggancio automatico
-// al codice dal seed; mostra il codice risolto (o l'invito a inserirlo a mano).
-function guestStatoField(tr, labelKey, label) {
-  const codeKey = labelKey === 'statoNascitaLabel' ? 'codiceStatoNascita' : 'codiceCittadinanza';
-  const input = h('input', {
-    className: 'field-input', type: 'text', placeholder: 'es. ITALIA',
-    value: (state.ocrFields && state.ocrFields[labelKey]) || '',
+// Restituisce la data (gg/mm/aaaa) a "offset" giorni da oggi (0 = oggi, -1 = ieri, +1 = domani...).
+function dateFromOffset(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+}
+
+// Data di arrivo: solo oggi o ieri, mai altre date.
+function arrivalDateField(tr) {
+  const options = [
+    { value: dateFromOffset(-1), label: dateFromOffset(-1) + ' — ' + tr.upload.yesterday },
+    { value: dateFromOffset(0), label: dateFromOffset(0) + ' — ' + tr.upload.today },
+  ];
+  const current = (state.ocrFields && state.ocrFields.stay.arrivalDate) || '';
+  const select = h('select', { className: 'field-input' },
+    ...options.map(o => h('option', { value: o.value }, o.label))
+  );
+  select.value = options.some(o => o.value === current) ? current : dateFromOffset(0);
+  select.addEventListener('change', e => {
+    updateGuestField('stay.arrivalDate', e.target.value);
+    // Se la partenza coincide ora con l'arrivo appena scelto, la spostiamo al giorno dopo.
+    const dep = state.ocrFields.stay.departureDate;
+    if (dep === e.target.value) updateGuestField('stay.departureDate', dateFromOffset(1));
+    render();
   });
-  input.addEventListener('input', e => { updateGuestStato(labelKey, e.target.value.toUpperCase()); render(); });
-  const codeInput = h('input', {
-    className: 'field-input', type: 'text', placeholder: tr.upload.manualCodePlaceholder,
-    value: (state.ocrFields && state.ocrFields[codeKey]) || '',
-  });
-  codeInput.addEventListener('input', e => updateGuestField(codeKey, e.target.value));
-  const resolved = state.ocrFields && state.ocrFields[codeKey];
   return h('div', { className: 'field-group' },
-    h('label', { className: 'field-label' }, label),
-    input,
-    h('div', { className: 'field-hint' }, resolved ? (tr.upload.codeResolved + ': ' + resolved) : tr.upload.codeNotFound),
-    codeInput,
+    h('label', { className: 'field-label' }, tr.upload.fDataArrivo),
+    select,
+  );
+}
+
+// Data di partenza: da oggi fino a 30 giorni avanti, mai uguale alla data di arrivo scelta.
+function departureDateField(tr) {
+  const arrival = (state.ocrFields && state.ocrFields.stay.arrivalDate) || dateFromOffset(0);
+  const options = [];
+  for (let i = 0; i <= 30; i++) {
+    const value = dateFromOffset(i);
+    if (value === arrival) continue;
+    const suffix = i === 0 ? ' — ' + tr.upload.today : i === 1 ? ' — ' + tr.upload.tomorrow : '';
+    options.push({ value, label: value + suffix });
+  }
+  const current = (state.ocrFields && state.ocrFields.stay.departureDate) || '';
+  const select = h('select', { className: 'field-input' },
+    ...options.map(o => h('option', { value: o.value }, o.label))
+  );
+  select.value = options.some(o => o.value === current) ? current : options[0].value;
+  select.addEventListener('change', e => { updateGuestField('stay.departureDate', e.target.value); render(); });
+  return h('div', { className: 'field-group' },
+    h('label', { className: 'field-label' }, tr.upload.fDataPartenza),
+    select,
   );
 }
 
 function renderReviewStep(tr) {
-  let errorNote = null;
-  if (state.ocrError === 'fallback') {
-    errorNote = h('div', { className: 'ocr-error-note' }, tr.upload.ocrFallbackMsg);
-  } else if (state.ocrError === 'both') {
-    errorNote = h('div', { className: 'ocr-error-note' }, tr.upload.ocrErrorMsg);
-  }
+  const errorNote = state.ocrError === 'vision_failed'
+    ? h('div', { className: 'ocr-error-note' }, tr.upload.ocrErrorMsg)
+    : null;
   const techDetail = state.ocrErrorDetail ? h('details', { className: 'tech-detail' },
     h('summary', {}, tr.upload.techDetailsToggle),
     h('div', { className: 'tech-detail-body' }, state.ocrErrorDetail),
   ) : null;
 
-  const isPrincipal = ['16', '17', '18'].includes((state.ocrFields || {}).tipoAlloggiato);
-  const docFields = isPrincipal ? [
-    guestSelect(tr, 'tipoDocumentoLabel', tr.upload.fDocType, ALLOGGIATI_DOCUMENTI.map(d => ({ value: d.label, label: d.label }))),
-    guestField(tr, 'codiceTipoDocumento', tr.upload.fDocCode, { hint: tr.upload.docCodeHint }),
-    guestField(tr, 'numeroDocumento', tr.upload.fNumber),
-    guestField(tr, 'luogoRilascioLabel', tr.upload.fLuogoRilascio),
-    guestField(tr, 'codiceLuogoRilascio', tr.upload.fLuogoRilascioCode, { hint: tr.upload.docCodeHint }),
-  ] : [
-    h('div', { className: 'field-sub' }, tr.upload.groupMemberNote),
-  ];
+  const confidence = state.ocrFields && state.ocrFields.document ? state.ocrFields.document.ocrConfidence : null;
+  const confidenceNote = (typeof confidence === 'number') ? h('div', { className: 'field-hint' },
+    tr.upload.ocrConfidenceLabel + ': ' + Math.round(confidence * 100) + '%'
+  ) : null;
 
   return [
     h('h2', { className: 'section-h2' }, tr.upload.reviewTitle),
@@ -1426,25 +1907,27 @@ function renderReviewStep(tr) {
     techDetail,
 
     h('div', { className: 'field-section-title' }, tr.upload.sectionStay),
-    guestSelect(tr, 'tipoAlloggiato', tr.upload.fTipoAlloggiato, ALLOGGIATI_TIPO_OPTIONS.map(o => ({ value: o.code, label: o.code + ' — ' + o.label }))),
-    guestField(tr, 'dataArrivo', tr.upload.fDataArrivo, { placeholder: 'gg/mm/aaaa' }),
-    guestField(tr, 'giorniPermanenza', tr.upload.fPermanenza, { type: 'number' }),
+    arrivalDateField(tr),
+    departureDateField(tr),
+    guestSelect(tr, 'stay.guestType', tr.upload.fTipoAlloggiato, GUEST_TYPE_OPTIONS.map(v => ({ value: v, label: v }))),
 
     h('div', { className: 'field-section-title' }, tr.upload.sectionAnagrafica),
-    guestField(tr, 'cognome', tr.upload.fSurname),
-    guestField(tr, 'nome', tr.upload.fGivenNames),
-    guestSelect(tr, 'sesso', tr.upload.fSesso, [{ value: '', label: '—' }, { value: 'M', label: 'M' }, { value: 'F', label: 'F' }]),
-    guestField(tr, 'dataNascita', tr.upload.fDob, { placeholder: 'gg/mm/aaaa' }),
+    guestField(tr, 'personal.lastName', tr.upload.fSurname),
+    guestField(tr, 'personal.firstName', tr.upload.fGivenNames),
+    guestSelect(tr, 'personal.gender', tr.upload.fSesso, [{ value: '', label: '—' }, { value: 'M', label: 'M' }, { value: 'F', label: 'F' }]),
+    guestField(tr, 'personal.birthDate', tr.upload.fDob, { placeholder: 'gg/mm/aaaa' }),
 
     h('div', { className: 'field-section-title' }, tr.upload.sectionNascita),
-    guestStatoField(tr, 'statoNascitaLabel', tr.upload.fStatoNascita),
-    guestField(tr, 'comuneNascitaLabel', tr.upload.fComuneNascita),
-    guestField(tr, 'codiceComuneNascita', tr.upload.fComuneNascitaCode, { hint: tr.upload.docCodeHint }),
-    guestField(tr, 'provinciaNascita', tr.upload.fProvinciaNascita, { placeholder: 'es. ME' }),
-    guestStatoField(tr, 'cittadinanzaLabel', tr.upload.fCittadinanza),
+    guestField(tr, 'personal.birthPlace', tr.upload.fComuneNascita),
+    guestField(tr, 'personal.birthProvince', tr.upload.fProvinciaNascita, { placeholder: 'es. ME' }),
+    guestSelect(tr, 'personal.birthCountry', tr.upload.fStatoNascita, [{ value: '', label: '—' }, ...STATI_LIST.map(v => ({ value: v, label: v }))]),
+    guestSelect(tr, 'personal.nationality', tr.upload.fCittadinanza, [{ value: '', label: '—' }, ...STATI_LIST.map(v => ({ value: v, label: v }))]),
 
     h('div', { className: 'field-section-title' }, tr.upload.sectionDocumento),
-    ...docFields,
+    guestSelect(tr, 'document.type', tr.upload.fDocType, [{ value: '', label: '—' }, ...DOCUMENTI_LIST.map(v => ({ value: v, label: v }))]),
+    guestField(tr, 'document.number', tr.upload.fNumber),
+    guestField(tr, 'document.issuePlace', tr.upload.fLuogoRilascio),
+    confidenceNote,
 
     h('button', { className: 'btn-wa', style: 'border:none;cursor:pointer;width:100%;', onClick: addGuestToList },
       ms('person_add'), ' ', tr.upload.confirmAdd),
@@ -1455,11 +1938,8 @@ function renderReviewStep(tr) {
 function renderGuestListStep(tr) {
   const rows = state.schedine.map(g => h('div', { className: 'guest-row' },
     h('div', { className: 'guest-row-info' },
-      h('div', { className: 'guest-row-name' },
-        (g.cognome || '—') + ' ' + (g.nome || ''),
-        g._incomplete ? h('span', { className: 'guest-row-warning' }, ' ⚠ ' + tr.upload.incompleteBadge) : null,
-      ),
-      h('div', { className: 'guest-row-sub' }, g.dataArrivo + ' · ' + g.giorniPermanenza + 'gg · tipo ' + g.tipoAlloggiato),
+      h('div', { className: 'guest-row-name' }, (g.personal.lastName || '—') + ' ' + (g.personal.firstName || '')),
+      h('div', { className: 'guest-row-sub' }, g.stay.arrivalDate + ' → ' + g.stay.departureDate + ' · ' + g.stay.guestType),
     ),
     h('div', { className: 'guest-row-actions' },
       h('button', { className: 'guest-row-btn', onClick: () => editGuestFromList(g.id) }, ms('edit')),
@@ -1467,7 +1947,31 @@ function renderGuestListStep(tr) {
     ),
   ));
 
-  const preview = state.showTxtPreview ? h('pre', { className: 'txt-preview' }, generateAlloggiatiTxt(state.schedine)) : null;
+  const preview = state.showTxtPreview ? h('pre', { className: 'txt-preview' }, JSON.stringify(buildExportJson(), null, 2)) : null;
+
+  let sendSection = null;
+  if (state.schedine.length) {
+    if (state.sendStatus === 'sending') {
+      sendSection = h('div', { className: 'ocr-processing', style: 'padding:24px 20px;' },
+        h('div', { className: 'ocr-spinner' }), h('div', {}, tr.upload.sending));
+    } else {
+      // Il pulsante di invio resta sempre disponibile, anche dopo un invio riuscito:
+      // l'ospite potrebbe dover mandare altri documenti nella stessa pratica, oppure
+      // essersi accorto di un errore nell'invio precedente e voler reinviare.
+      sendSection = h('div', {},
+        state.sendStatus === 'sent' ? h('div', { className: 'sent-badge' }, ms('check_circle'), ' ', tr.upload.sentAutomatically) : null,
+        state.sendStatus === 'error' ? h('div', { className: 'ocr-error-note' }, tr.upload.sendErrorMsg) : null,
+        state.sendErrorDetail ? h('details', { className: 'tech-detail' },
+          h('summary', {}, tr.upload.techDetailsToggle),
+          h('div', { className: 'tech-detail-body' }, state.sendErrorDetail),
+        ) : null,
+        h('button', { className: 'btn-wa', style: 'border:none;cursor:pointer;width:100%;', onClick: sendAutomatically },
+          ms('forward_to_inbox'), ' ', tr.upload.sendAutoBtn),
+        h('button', { className: 'btn-primary', style: 'background:var(--surface);color:var(--text-1);box-shadow:var(--shadow-xs);', onClick: downloadOnly },
+          ms('download'), ' ', tr.upload.downloadBtn),
+      );
+    }
+  }
 
   return [
     h('h2', { className: 'section-h2' }, tr.upload.listTitle),
@@ -1475,12 +1979,7 @@ function renderGuestListStep(tr) {
       : h('div', { className: 'field-sub' }, tr.upload.listEmpty),
     h('button', { className: 'btn-primary', style: 'background:var(--surface);color:var(--text-1);box-shadow:var(--shadow-xs);', onClick: () => { state.docPhase = 'capture'; render(); } },
       ms('add_a_photo'), ' ', tr.upload.addGuestBtn),
-    state.schedine.length ? h('div', { className: 'send-choice' },
-      h('button', { className: 'btn-wa', style: 'border:none;cursor:pointer;', onClick: sendViaWhatsApp },
-        ms('chat'), ' ', tr.upload.sendWhatsAppBtn),
-      h('button', { className: 'btn-primary', style: 'background:var(--surface);color:var(--text-1);box-shadow:var(--shadow-xs);', onClick: sendViaEmail },
-        ms('mail'), ' ', tr.upload.sendEmailBtn),
-    ) : null,
+    sendSection,
     state.schedine.length ? h('button', { className: 'btn-link', onClick: () => { state.showTxtPreview = !state.showTxtPreview; render(); } },
       state.showTxtPreview ? tr.upload.hidePreview : tr.upload.showPreview) : null,
     preview,
@@ -1496,6 +1995,7 @@ function renderUpload() {
   if (state.docPhase === 'processing') body = renderProcessingStep(tr);
   else if (state.docPhase === 'review') body = renderReviewStep(tr);
   else if (state.docPhase === 'list') body = renderGuestListStep(tr);
+  else if (state.docPhase === 'disclaimer') body = renderDisclaimerStep(tr);
   else body = renderCaptureStep(tr);
 
   return h('div', { className: 'page' },
@@ -1605,14 +2105,14 @@ function renderSectionContent() {
       h('h2', { className: 'section-h2' }, tr.tabs.info),
       h('div', { className: 'wifi-card' },
         h('div', { className: 'wifi-kicker' }, 'WiFi'),
-        h('div', { className: 'wifi-field' }, h('div', { className: 'wifi-field-label' }, 'Network'), h('div', { className: 'wifi-field-value' }, 'MiPA_guests')),
-        h('div', { className: 'wifi-field' }, h('div', { className: 'wifi-field-label' }, 'Password'), h('div', { className: 'wifi-field-value' }, 'viaS.Giovanni/42')),
+        h('div', { className: 'wifi-field' }, h('div', { className: 'wifi-field-label' }, 'Network'), h('div', { className: 'wifi-field-value' }, 'B&B Via Nazionale')),
+        h('div', { className: 'wifi-field' }, h('div', { className: 'wifi-field-label' }, 'Password'), h('div', { className: 'wifi-field-value' }, 'BBViaNazionale!16')),
         h('button', { className: 'wifi-btn', onClick: connectWifi }, ms('wifi'), ' ', tr.info.wifiConnect),
       ),
       h('div', { className: 'section-group' },
         h('div', { className: 'section-group-label' }, tr.info.general),
         h('div', { className: 'section-row' },
-          h('div', { className: 'row-icon', style: { background: '#4f7d65' } }, ms('schedule')),
+          h('div', { className: 'row-icon', style: { background: '#8a1f1f' } }, ms('schedule')),
           h('div', {}, h('div', { className: 'row-label' }, 'Check-in'), h('div', { className: 'row-value' }, tr.info.checkin)),
         ),
         h('div', { className: 'section-row' },
@@ -1621,7 +2121,7 @@ function renderSectionContent() {
         ),
         h('div', { className: 'section-row' },
           h('div', { className: 'row-icon', style: { background: '#7c3aed' } }, ms('location_on')),
-          h('div', {}, h('div', { className: 'row-label' }, tr.info.address), h('div', { className: 'row-value' }, 'Via San Giovanni 42, Milazzo (ME)')),
+          h('div', {}, h('div', { className: 'row-label' }, tr.info.address), h('div', { className: 'row-value' }, 'Via Archi Nazionale 16, San Filippo del Mela (ME)')),
         ),
       ),
       h('div', { className: 'section-label' }, tr.info.contacts),
@@ -1631,9 +2131,9 @@ function renderSectionContent() {
           h('div', {}, h('div', { className: 'contact-btn-label' }, tr.info.phone), h('div', { className: 'contact-btn-value' }, '+39 333 920 1524')),
           ms('chevron_right', true),
         ),
-        h('a', { className: 'contact-btn', href: 'mailto:studiosmipa@gmail.com' },
+        h('a', { className: 'contact-btn', href: 'mailto:DA_COMPLETARE@example.com' },
           h('div', { className: 'contact-btn-icon', style: { background: '#0284c7' } }, ms('mail')),
-          h('div', {}, h('div', { className: 'contact-btn-label' }, 'Email'), h('div', { className: 'contact-btn-value' }, 'studiosmipa@gmail.com')),
+          h('div', {}, h('div', { className: 'contact-btn-label' }, 'Email'), h('div', { className: 'contact-btn-value' }, 'DA_COMPLETARE@example.com')),
           ms('chevron_right', true),
         ),
         h('a', { className: 'contact-btn', href: 'https://wa.me/393339201524', target: '_blank' },
@@ -1856,7 +2356,7 @@ function renderSectionContent() {
     return h('div', { className: 'section-body' },
       h('h2', { className: 'section-h2' }, tr.tabs.roomGuide),
       h('p', { style: 'font-size:14px;color:var(--text-3);margin-bottom:20px;line-height:1.6' }, tr.room.desc),
-      h('a', { className: 'nav-btn', href: 'https://maps.app.goo.gl/Xqsaxxd7Bf8bK8hcA', target: '_blank', style: 'background:var(--toolbar);box-shadow:0 4px 18px rgba(53,79,65,.28)' },
+      h('a', { className: 'nav-btn', href: 'https://www.google.com/maps/search/?api=1&query=Via+Archi+Nazionale+16+San+Filippo+del+Mela+ME', target: '_blank', style: 'background:var(--toolbar);box-shadow:0 4px 18px rgba(138,31,31,.28)' },
         h('span', { className: 'nav-btn-icon' }, '🏠'),
         h('div', {}, h('div', { className: 'nav-btn-title' }, tr.room.btnTitle), h('div', { className: 'nav-btn-sub' }, tr.room.btnSub)),
         ms('chevron_right', true),
@@ -1978,9 +2478,9 @@ window.addEventListener('beforeinstallprompt', e => {
 
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-if (isIOS && !isStandalone && !localStorage.getItem('mipa_ios_hint_shown')) {
+if (isIOS && !isStandalone && !localStorage.getItem('vianaz_ios_hint_shown')) {
   state.showIOSHint = true;
-  localStorage.setItem('mipa_ios_hint_shown', '1');
+  localStorage.setItem('vianaz_ios_hint_shown', '1');
 }
 
 if ('serviceWorker' in navigator) {
