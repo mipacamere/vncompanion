@@ -698,8 +698,8 @@ function t() { return allT[state.lang] || allT.en; }
 // Configurazione struttura (per l'export JSON)
 // ══════════════════════════════════════════════
 const STRUCTURE_NAME = 'B&B Via Nazionale'; // <-- personalizza col nome reale della struttura
-const STRUCTURE_CODE = 'DA_COMPLETARE';      // <-- TODO: inserisci il codice struttura Alloggiati Web di Via Nazionale (diverso da quello di MiPA!)
-const STRUCTURE_CIN = 'DA_COMPLETARE'; // <-- TODO: inserisci il CIN (Codice Identificativo Nazionale) di Via Nazionale (diverso da quello di MiPA!)
+const STRUCTURE_CODE = 'ME001066';      // <-- TODO: inserisci il codice struttura Alloggiati Web di Via Nazionale (diverso da quello di MiPA!)
+const STRUCTURE_CIN = 'IT083077C2V59BCOSW'; // <-- TODO: inserisci il CIN (Codice Identificativo Nazionale) di Via Nazionale (diverso da quello di MiPA!)
 
 // ══════════════════════════════════════════════
 // Ospiti — validazione leggera
